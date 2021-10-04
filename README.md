@@ -1,3 +1,9 @@
+F1 yolov5 train weights: https://drive.google.com/file/d/12e3yFgDiKz4IeWy1rz1bYpYQPvBJ1MmT/view
+
+Kaynak : https://github.com/mikel-brostrom/Yolov5_DeepSort_Pytorch
+
+
+
 # Yolov5 + Deep Sort with PyTorch
 
 
