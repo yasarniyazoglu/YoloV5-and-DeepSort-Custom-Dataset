@@ -1,3 +1,5 @@
+Coleb : https://drive.google.com/file/d/1Bt5z5-jlMPlev1L6X_Ztv9i6FLKnY-D0/view?usp=sharing
+
 F1 yolov5 train weights: https://drive.google.com/file/d/12e3yFgDiKz4IeWy1rz1bYpYQPvBJ1MmT/view
 
 Kaynak : https://github.com/mikel-brostrom/Yolov5_DeepSort_Pytorch
