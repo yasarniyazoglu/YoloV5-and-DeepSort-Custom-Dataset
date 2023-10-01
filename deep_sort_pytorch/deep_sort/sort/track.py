@@ -73,6 +73,7 @@ class Track:
         self.age = 1
         self.time_since_update = 0
         self.bbox = [0, 0, 0, 0]
+        self.centroidarr = []
 
         self.state = TrackState.Tentative
         self.features = []
@@ -161,6 +162,12 @@ class Track:
         self.time_since_update = 0
         if self.state == TrackState.Tentative and self.hits >= self._n_init:
             self.state = TrackState.Confirmed
+
+        # 트래킹 객체 중심 좌표 추가
+        d = detection.to_xyah()
+        CX = (d[0] + d[2] // 2)
+        CY = (d[1] + d[3] // 2)
+        self.centroidarr.append((CX, CY))
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).
