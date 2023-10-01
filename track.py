@@ -18,9 +18,28 @@ from pathlib import Path
 import cv2
 import torch
 import torch.backends.cudnn as cudnn
+import subprocess
+from dotenv import load_dotenv
 
+load_dotenv()
+HLS_OUTPUT = os.environ.get('HLSPATH')
+def run_ffmpeg(width, height, fps):
+    ffmpg_cmd = [
+        'ffmpeg',
+        '-y',
+        '-f', 'rawvideo',
+        '-vcodec', 'rawvideo',
+        '-pix_fmt', 'bgr24',
+        '-s', "{}x{}".format(width, height),
+        '-r', str(fps),
+        '-i', '-',
+        '-hls_time', '5',
+        '-hls_list_size', '6',
+        f'{HLS_OUTPUT}index.m3u8'
+    ]
+    return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
-# 혼잡도 카운팅
+# 인원수 카운팅
 incount = 0
 outcount = 0
 ids = []
@@ -36,11 +55,14 @@ def detect(opt):
         'rtsp') or source.startswith('http') or source.endswith('.txt')
 
     global isInVideo
+    global HLS_OUTPUT
     if "in" in source:  # in 이라는 글자가 포함되면 true
         isInVideo = True
         line = [200, 190, 200, 380]
+        HLS_OUTPUT = HLS_OUTPUT + "in/"
     else:
         line = [200, 190, 200, 280]
+        HLS_OUTPUT = HLS_OUTPUT + "out/"
 
     # initialize deepsort
     cfg = get_config()
@@ -99,6 +121,10 @@ def detect(opt):
     # extract what is in between the last '/' and last '.'
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
+
+    # img = next(iter(dataset))[1]
+    # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
+    ffmpeg_process = run_ffmpeg(720, 480, 6)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -218,7 +244,7 @@ def detect(opt):
             cv2.line(im0, (line[0], line[1]),
                      (line[2], line[3]), (255, 0, 0), 5)
 
-            # 혼잡도 출력
+            # 인원수 출력
             text_scale = max(1, im0.shape[1] // 1600)
             if isInVideo:
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
@@ -233,6 +259,9 @@ def detect(opt):
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
+
+            # hls 변환하기 위한 subprocess 생성
+            ffmpeg_process.stdin.write(im0)
 
             # Save results (image with detections)
             if save_vid:
