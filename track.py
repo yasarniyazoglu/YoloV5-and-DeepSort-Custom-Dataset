@@ -39,20 +39,23 @@ def run_ffmpeg(width, height, fps):
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
-def isFall(tracks, width, height):
+def isFall(tracks):
     for track in tracks:
-        if(track.track_id not in fallIds and len(track.centroidarr) >= 3 and ((track.centroidarr[-2][1] - height/3 > track.centroidarr[-1][1]) 
-                                            or (track.centroidarr[-3][1] - height/3 > track.centroidarr[-1][1]))):
-            fallIds.append(track.track_id)
-            return True
-    return False
+        if(len(track.centroidarr) >= 3):
+            height3framePrior = track.centroidarr[-3][3] - track.centroidarr[-3][1]
+            height2framePrior = track.centroidarr[-2][3] - track.centroidarr[-2][1]
+            if(track.track_id not in fallIds and ((track.centroidarr[-2][1] - height2framePrior/3 > track.centroidarr[-1][1]) or (track.centroidarr[-3][1] - height3framePrior/3 > track.centroidarr[-1][1]))):
+                fallIds.append(track.track_id)
+                return True
+        return False
 
 # 인원수 카운팅
 incount = 0
 outcount = 0
 countIds = []
 fallIds = []
-isInVideo = False
+videoType = ['in', 'out', 'center']
+videoTypeNum = 0
 line = []  # x1, y1, x2, y2
 
 
@@ -63,15 +66,19 @@ def detect(opt):
     webcam = source == '0' or source.startswith(
         'rtsp') or source.startswith('http') or source.endswith('.txt')
 
-    global isInVideo
     global HLS_OUTPUT
+    global videoTypeNum
+    global line
     if "in" in source:  # in 이라는 글자가 포함되면 true
-        isInVideo = True
         line = [200, 190, 200, 380]
         HLS_OUTPUT = HLS_OUTPUT + "in/"
-    else:
+    elif "out" in source:
+        videoTypeNum = 1
         line = [200, 190, 200, 280]
         HLS_OUTPUT = HLS_OUTPUT + "out/"
+    else:
+        videoTypeNum = 2
+        HLS_OUTPUT = HLS_OUTPUT + "center/"
 
     # initialize deepsort
     cfg = get_config()
@@ -133,7 +140,7 @@ def detect(opt):
 
     # img = next(iter(dataset))[1]
     # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
-    ffmpeg_process = run_ffmpeg(480, 640, 6)
+    ffmpeg_process = run_ffmpeg(720, 480, 6)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -190,7 +197,7 @@ def detect(opt):
                     global outcount
                     print(countIds)
                     if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
-                        if(isInVideo):  # in count
+                        if(videoType[videoTypeNum] == 'in'):  # in count
                             if(track.track_id not in countIds and len(track.centroidarr) >= 3
                             and ((track.centroidarr[-3][0] <= line[0]
                                     and track.centroidarr[-3][1] >= line[1]
@@ -205,7 +212,7 @@ def detect(opt):
                             ):
                                 incount += 1
                                 countIds.append(track.track_id)
-                        else:  # out count
+                        elif videoType[videoTypeNum] == 'out':  # out count
                             if(track.track_id not in countIds and len(track.centroidarr) >= 3
                             and ((track.centroidarr[-3][0] >= line[0]
                                     and track.centroidarr[-3][1] <= line[3]
@@ -222,13 +229,23 @@ def detect(opt):
                                 countIds.append(track.track_id)
 
                 # fall detection
-                for d in det:
-                    width = d[2] - d[0]
-                    height = d[3] - d[1]
-                    if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
-                        print("transmit video")
-                        break
-                print("fallIds: ", fallIds)
+                if(videoType[videoTypeNum] == 'center'):
+                    for track in tracks:
+                        height = track.height
+                        print(height)
+                        if track.class_id == 'person' and height < 30 and isFall(tracks, height):
+                            print("transmit video")
+                            break
+                    print("fallIds: ", fallIds)
+
+
+                    # for d in det:
+                    #     width = d[2] - d[0]
+                    #     height = d[3] - d[1]
+                    #     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
+                    #         print("transmit video")
+                    #         break
+                    # print("fallIds: ", fallIds)
                     
 
                 # draw boxes for visualization
@@ -262,15 +279,16 @@ def detect(opt):
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
             # 기준 line 출력
-            cv2.line(im0, (line[0], line[1]),
-                     (line[2], line[3]), (255, 0, 0), 5)
+            if videoType[videoTypeNum] != 'center':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
 
             # 인원수 출력
             text_scale = max(1, im0.shape[1] // 1600)
-            if isInVideo:
+            if videoType[videoTypeNum] == 'in':
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
-            else:
+            elif videoType[videoTypeNum] == 'out':
                 cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
 
