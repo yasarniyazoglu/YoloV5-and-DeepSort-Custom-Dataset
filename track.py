@@ -39,6 +39,12 @@ def run_ffmpeg(width, height, fps):
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
+def isFall(tracks, width, height):
+    for track in tracks:
+        if(len(track.centroidarr) >= 2 and track.centroidarr[-2][1] - height/3 > track.centroidarr[-1][1]):
+            return True
+    return False
+
 # 인원수 카운팅
 incount = 0
 outcount = 0
@@ -209,6 +215,14 @@ def detect(opt):
                            ):
                             outcount += 1
                             ids.append(track.track_id)
+
+                # fall detection
+                for d in det:
+                    width = d[2] - d[0]
+                    height = d[3] - d[1]
+                    if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
+                        print("transmit video")
+                    
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
