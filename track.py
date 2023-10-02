@@ -39,18 +39,6 @@ def run_ffmpeg(width, height, fps):
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
-def isFall(tracks):
-    for track in tracks:
-        # print('test')
-        if(len(track.centroidarr) >= 3):
-            # print('-2c: ', track.centroidarr[-2][1])
-            # print('-1h: ', track.height[-1])
-            # print('-1c: ', track.centroidarr[-1][1])
-            if(track.track_id not in fallIds and ((track.centroidarr[-2][1] < track.centroidarr[-1][1] and track.height[-1] < 200) 
-                                                  or (track.centroidarr[-3][1] < track.centroidarr[-1][1] and track.height[-1] < 200))):
-                return True
-        return False
-
 # 인원수 카운팅
 incount = 0
 outcount = 0
@@ -60,6 +48,21 @@ videoType = ['in', 'out', 'center']
 videoTypeNum = 0
 line = []  # x1, y1, x2, y2
 
+def isFall(tracks):
+    for track in tracks:
+        # print('test')
+        if(len(track.height) >= 3):
+            # print('-2c: ', track.centroidarr[-2][1])
+            # print('-1h: ', track.height[-1])
+            # print('-1c: ', track.centroidarr[-1][1])
+            print('-3', track.height[-3])
+            print('-2', track.height[-2])
+            print('-1', track.height[-1])
+            if(track.track_id not in fallIds and ((track.height[-2]/2 > track.height[-1]) 
+                                                  or (track.height[-3]/2 > track.height[-1]))):
+                fallIds.append(track.track_id)
+                return True
+        return False
 
 def detect(opt):
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
@@ -235,7 +238,6 @@ def detect(opt):
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
-                            fallIds.append(track.track_id)
                             print("transmit video")
                             break
                         # if height < 200:
