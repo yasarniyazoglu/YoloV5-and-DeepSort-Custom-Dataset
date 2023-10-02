@@ -189,36 +189,37 @@ def detect(opt):
                     global incount
                     global outcount
                     print(countIds)
-                    if(isInVideo):  # in count
-                        if(track.track_id not in countIds and len(track.centroidarr) >= 3
-                           and ((track.centroidarr[-3][0] <= line[0]
-                                 and track.centroidarr[-3][1] >= line[1]
-                                 and track.centroidarr[-1][0] >= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                 ) or
-                                (track.centroidarr[-2][0] <= line[0]
-                                 and track.centroidarr[-2][1] <= line[1]
-                                 and track.centroidarr[-1][0] >= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                 ))
-                           ):
-                            incount += 1
-                            countIds.append(track.track_id)
-                    else:  # out count
-                        if(track.track_id not in countIds and len(track.centroidarr) >= 3
-                           and ((track.centroidarr[-3][0] >= line[0]
-                                 and track.centroidarr[-3][1] <= line[3]
-                                 and track.centroidarr[-1][0] <= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                 ) or
-                                (track.centroidarr[-2][0] >= line[0]
-                                 and track.centroidarr[-2][1] <= line[3]
-                                 and track.centroidarr[-1][0] <= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                 ))
-                           ):
-                            outcount += 1
-                            countIds.append(track.track_id)
+                    if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
+                        if(isInVideo):  # in count
+                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                            and ((track.centroidarr[-3][0] <= line[0]
+                                    and track.centroidarr[-3][1] >= line[1]
+                                    and track.centroidarr[-1][0] >= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                    ) or
+                                    (track.centroidarr[-2][0] <= line[0]
+                                    and track.centroidarr[-2][1] <= line[1]
+                                    and track.centroidarr[-1][0] >= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                    ))
+                            ):
+                                incount += 1
+                                countIds.append(track.track_id)
+                        else:  # out count
+                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                            and ((track.centroidarr[-3][0] >= line[0]
+                                    and track.centroidarr[-3][1] <= line[3]
+                                    and track.centroidarr[-1][0] <= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                    ) or
+                                    (track.centroidarr[-2][0] >= line[0]
+                                    and track.centroidarr[-2][1] <= line[3]
+                                    and track.centroidarr[-1][0] <= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                    ))
+                            ):
+                                outcount += 1
+                                countIds.append(track.track_id)
 
                 # fall detection
                 for d in det:
@@ -226,8 +227,8 @@ def detect(opt):
                     height = d[3] - d[1]
                     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
                         print("transmit video")
-                        print("fallIds: ", fallIds)
                         break
+                print("fallIds: ", fallIds)
                     
 
                 # draw boxes for visualization
