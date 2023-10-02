@@ -74,7 +74,7 @@ class Track:
         self.time_since_update = 0
         self.bbox = [0, 0, 0, 0]
         self.centroidarr = []
-        self.height = 0
+        self.height = []
 
         self.state = TrackState.Tentative
         self.features = []
@@ -169,7 +169,7 @@ class Track:
         CX = (d[0] + d[2] // 2)
         CY = (d[1] + d[3] // 2)
         self.centroidarr.append((CX, CY))
-        self.height = d[3]
+        self.height.append(d[3])
 
     def mark_missed(self):
         """Mark this track as missed (no association at the current time step).

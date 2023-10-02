@@ -41,11 +41,13 @@ def run_ffmpeg(width, height, fps):
 
 def isFall(tracks):
     for track in tracks:
+        # print('test')
         if(len(track.centroidarr) >= 3):
-            height3framePrior = track.centroidarr[-3][3] - track.centroidarr[-3][1]
-            height2framePrior = track.centroidarr[-2][3] - track.centroidarr[-2][1]
-            if(track.track_id not in fallIds and ((track.centroidarr[-2][1] - height2framePrior/3 > track.centroidarr[-1][1]) or (track.centroidarr[-3][1] - height3framePrior/3 > track.centroidarr[-1][1]))):
-                fallIds.append(track.track_id)
+            # print('-2c: ', track.centroidarr[-2][1])
+            # print('-1h: ', track.height[-1])
+            # print('-1c: ', track.centroidarr[-1][1])
+            if(track.track_id not in fallIds and ((track.centroidarr[-2][1] < track.centroidarr[-1][1] and track.height[-1] < 200) 
+                                                  or (track.centroidarr[-3][1] < track.centroidarr[-1][1] and track.height[-1] < 200))):
                 return True
         return False
 
@@ -229,13 +231,18 @@ def detect(opt):
                                 countIds.append(track.track_id)
 
                 # fall detection
-                if(videoType[videoTypeNum] == 'center'):
-                    for track in tracks:
-                        height = track.height
-                        print(height)
-                        if track.class_id == 'person' and height < 30 and isFall(tracks, height):
+                # if(videoType[videoTypeNum] == 'center'):
+                for track in tracks:
+                    if names[int(track.class_id)] == 'person':
+                        if isFall(tracks):
+                            fallIds.append(track.track_id)
                             print("transmit video")
                             break
+                        # if height < 200:
+                        #     print('test2')
+                        #     if(isFall(tracks)):
+                        #         print('test3')
+                        
                     print("fallIds: ", fallIds)
 
 
