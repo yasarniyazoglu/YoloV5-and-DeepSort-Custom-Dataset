@@ -41,14 +41,17 @@ def run_ffmpeg(width, height, fps):
 
 def isFall(tracks, width, height):
     for track in tracks:
-        if(len(track.centroidarr) >= 2 and track.centroidarr[-2][1] - height/3 > track.centroidarr[-1][1]):
+        if(track.track_id not in fallIds and len(track.centroidarr) >= 3 and ((track.centroidarr[-2][1] - height/3 > track.centroidarr[-1][1]) 
+                                            or (track.centroidarr[-3][1] - height/3 > track.centroidarr[-1][1]))):
+            fallIds.append(track.track_id)
             return True
     return False
 
 # 인원수 카운팅
 incount = 0
 outcount = 0
-ids = []
+countIds = []
+fallIds = []
 isInVideo = False
 line = []  # x1, y1, x2, y2
 
@@ -130,7 +133,7 @@ def detect(opt):
 
     # img = next(iter(dataset))[1]
     # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
-    ffmpeg_process = run_ffmpeg(720, 480, 6)
+    ffmpeg_process = run_ffmpeg(480, 640, 6)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -182,11 +185,12 @@ def detect(opt):
                 # 인원수 카운팅
                 tracks = deepsort.tracker.tracks
                 for track in tracks:
+                    # print(track)
                     global incount
                     global outcount
-                    print(ids)
+                    print(countIds)
                     if(isInVideo):  # in count
-                        if(track.track_id not in ids and len(track.centroidarr) >= 3
+                        if(track.track_id not in countIds and len(track.centroidarr) >= 3
                            and ((track.centroidarr[-3][0] <= line[0]
                                  and track.centroidarr[-3][1] >= line[1]
                                  and track.centroidarr[-1][0] >= line[0]
@@ -199,9 +203,9 @@ def detect(opt):
                                  ))
                            ):
                             incount += 1
-                            ids.append(track.track_id)
+                            countIds.append(track.track_id)
                     else:  # out count
-                        if(track.track_id not in ids and len(track.centroidarr) >= 3
+                        if(track.track_id not in countIds and len(track.centroidarr) >= 3
                            and ((track.centroidarr[-3][0] >= line[0]
                                  and track.centroidarr[-3][1] <= line[3]
                                  and track.centroidarr[-1][0] <= line[0]
@@ -214,7 +218,7 @@ def detect(opt):
                                  ))
                            ):
                             outcount += 1
-                            ids.append(track.track_id)
+                            countIds.append(track.track_id)
 
                 # fall detection
                 for d in det:
@@ -222,6 +226,8 @@ def detect(opt):
                     height = d[3] - d[1]
                     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
                         print("transmit video")
+                        print("fallIds: ", fallIds)
+                        break
                     
 
                 # draw boxes for visualization
