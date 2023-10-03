@@ -100,14 +100,6 @@ myMQTTClinet.configureMQTTOperationTimeout(5)
 print("Initiating IoT Core Topic ...")
 myMQTTClinet.connect()
 
-
-# 혼잡도 카운팅
-incount = 0
-outcount = 0
-ids = []
-videoType = ""
-line = []  # x1, y1, x2, y2
-
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
         'ffmpeg',
@@ -124,8 +116,30 @@ def run_ffmpeg(width, height, fps):
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
-# def saveData(num, in_, out_, con):
-#     Bus(peopleNumber=num, in_count=in_, out_count=out_, congestion=con).save()
+# 인원수 카운팅
+incount = 0
+outcount = 0
+countIds = []
+fallIds = []
+videoType = ['in', 'out', 'center']
+videoTypeNum = 0
+line = []  # x1, y1, x2, y2
+
+def isFall(tracks):
+    for track in tracks:
+        # print('test')
+        if(len(track.height) >= 3):
+            # print('-2c: ', track.centroidarr[-2][1])
+            # print('-1h: ', track.height[-1])
+            # print('-1c: ', track.centroidarr[-1][1])
+            print('-3', track.height[-3])
+            print('-2', track.height[-2])
+            print('-1', track.height[-1])
+            if(track.track_id not in fallIds and ((track.height[-2]/2 > track.height[-1]) 
+                                                  or (track.height[-3]/2 > track.height[-1]))):
+                fallIds.append(track.track_id)
+                return True
+        return False
 
 def detect(opt):
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
@@ -134,22 +148,21 @@ def detect(opt):
     webcam = source == '0' or source.startswith(
         'rtsp') or source.startswith('http') or source.endswith('.txt')
 
-    global videoType
     global HLS_OUTPUT
-    global DIR_PATH
-    if "in" in source:  # in
-        videoType = "in"
+    global videoTypeNum
+    global line
+    if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
-        HLS_OUTPUT += "in/"
+        HLS_OUTPUT = HLS_OUTPUT + "in/"
         DIR_PATH += "in/"
-    elif "out" in source: # out
-        videoType = "out"
+    elif "out" in source:
+        videoTypeNum = 1
         line = [200, 190, 200, 280]
-        HLS_OUTPUT += "out/"
+        HLS_OUTPUT = HLS_OUTPUT + "out/"
         DIR_PATH += "out/"
-    else: # fall
-        videoType = "fall"
-        HLS_OUTPUT = HLS_OUTPUT + "fall/"
+    else:
+        videoTypeNum = 2
+        HLS_OUTPUT = HLS_OUTPUT + "center/"
         DIR_PATH += "fall/"
 
     # initialize deepsort
@@ -210,9 +223,9 @@ def detect(opt):
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
 
-    img = next(iter(dataset))[1]
+    # img = next(iter(dataset))[1]
     # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
-    ffmpeg_process = run_ffmpeg(1920, 1080, 30) ############################################## 
+    ffmpeg_process = run_ffmpeg(720, 480, 6)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -261,44 +274,67 @@ def detect(opt):
                 outputs = deepsort.update(
                     xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
 
+                # 인원수 카운팅
                 tracks = deepsort.tracker.tracks
                 for track in tracks:
+                    # print(track)
                     global incount
                     global outcount
-                    print(ids)
-                    if videoType == "in":  # in count
-                        if(track.track_id not in ids and len(track.centroidarr) >= 3
-                           and ((track.centroidarr[-3][0] <= line[0]
-                                 and track.centroidarr[-3][1] >= line[1]
-                                 and track.centroidarr[-1][0] >= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                 ) or
-                                (track.centroidarr[-2][0] <= line[0]
-                                 and track.centroidarr[-2][1] <= line[1]
-                                 and track.centroidarr[-1][0] >= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                 ))
-                           ):
-                            incount += 1
-                            ids.append(track.track_id)
-                    elif videoType == "out":  # out count
-                        if(track.track_id not in ids and len(track.centroidarr) >= 3
-                           and ((track.centroidarr[-3][0] >= line[0]
-                                 and track.centroidarr[-3][1] <= line[3]
-                                 and track.centroidarr[-1][0] <= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                 ) or
-                                (track.centroidarr[-2][0] >= line[0]
-                                 and track.centroidarr[-2][1] <= line[3]
-                                 and track.centroidarr[-1][0] <= line[0]
-                                 and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                 ))
-                           ):
-                            outcount += 1
-                            ids.append(track.track_id)
-                            ##########################################################################
-                    else: # fall detection algorithm ###################################################
-                        pass
+                    print(countIds)
+                    if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
+                        if(videoType[videoTypeNum] == 'in'):  # in count
+                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                            and ((track.centroidarr[-3][0] <= line[0]
+                                    and track.centroidarr[-3][1] >= line[1]
+                                    and track.centroidarr[-1][0] >= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                    ) or
+                                    (track.centroidarr[-2][0] <= line[0]
+                                    and track.centroidarr[-2][1] <= line[1]
+                                    and track.centroidarr[-1][0] >= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                    ))
+                            ):
+                                incount += 1
+                                countIds.append(track.track_id)
+                        elif videoType[videoTypeNum] == 'out':  # out count
+                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                            and ((track.centroidarr[-3][0] >= line[0]
+                                    and track.centroidarr[-3][1] <= line[3]
+                                    and track.centroidarr[-1][0] <= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                    ) or
+                                    (track.centroidarr[-2][0] >= line[0]
+                                    and track.centroidarr[-2][1] <= line[3]
+                                    and track.centroidarr[-1][0] <= line[0]
+                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                    ))
+                            ):
+                                outcount += 1
+                                countIds.append(track.track_id)
+
+                # fall detection
+                # if(videoType[videoTypeNum] == 'center'):
+                for track in tracks:
+                    if names[int(track.class_id)] == 'person':
+                        if isFall(tracks):
+                            print("transmit video")
+                            break
+                        # if height < 200:
+                        #     print('test2')
+                        #     if(isFall(tracks)):
+                        #         print('test3')
+                        
+                    print("fallIds: ", fallIds)
+
+
+                    # for d in det:
+                    #     width = d[2] - d[0]
+                    #     height = d[3] - d[1]
+                    #     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
+                    #         print("transmit video")
+                    #         break
+                    # print("fallIds: ", fallIds)
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -330,14 +366,10 @@ def detect(opt):
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
-            # 기준 line
-            cv2.line(im0, (line[0], line[1]),
-                     (line[2], line[3]), (255, 0, 0), 5)   # add1
-
             # 혼잡도 출력 및 전송#########################################################
             text_scale = max(1, im0.shape[1] // 1600)
             address = map.address()            
-            if videoType == "in":
+            if videoType[videoTypeNum] == 'in':
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
                 message = {"count" : incount, "address" : address}
@@ -346,7 +378,7 @@ def detect(opt):
                     QoS=1,
                     payload= json.dumps(message)
                 )
-            elif videoType == "out":
+            elif videoType[videoTypeNum] == 'out':
                 cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
                 message = {"count" : outcount, "address" : address}
@@ -355,16 +387,17 @@ def detect(opt):
                     QoS=1,
                     payload= json.dumps(message)
                 )
-            else: # fall ####################################################### fall detection data publish
-                pass
-            # saveData(num=incount-outcount, in_=incount, out_=outcount, con="혼잡")
-            ########## 혼잡도 조건문 추가#####################################################################
 
             fs = set() # hls 파일 전송 #########################################################################
             for (root, directories, files) in os.walk(DIR_PATH): # 
                     for i in [0, -1]:
                         handle_upload_img(files[i], videoType)
                         # os.remove(DIR_PATH + files[i])
+            # 기준 line 출력
+            if videoType[videoTypeNum] != 'center':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
+
 
             # Stream results
             im0 = annotator.result()
