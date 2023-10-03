@@ -13,7 +13,6 @@ import torch.backends.cudnn as cudnn
 import torch
 import cv2
 from pathlib import Path
-import time
 import shutil
 import platform
 import os
@@ -28,13 +27,7 @@ import map
 from dotenv import load_dotenv
 import random
 
-# sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
-# sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))
-# os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
-# django.setup()
-#print(sys.path)
-
-# from myyl.models import Bus
+from weather import check_weather
 
 load_dotenv()
 HLS_OUTPUT = os.environ.get('HLSPATH')
@@ -44,13 +37,51 @@ ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
 DIR_PATH = "hls/"
+s3 = ""
 
-s3 = boto3.resource(
-        's3',
-        aws_access_key_id=ACCESS_KEY_ID,
-        aws_secret_access_key=ACCESS_SECRET_KEY,
-        config=Config(signature_version='s3v4')
-    )
+# IoT
+CLIENT_ID = "MyTest"
+ENDPOINT =  os.environ.get('ENDPOINT')
+PATH_TO_AMAZON_ROOT_CA_1 =  os.environ.get('PATH_TO_AMAZON_ROOT_CA_1')
+PATH_TO_PRIVATE_KEY =  os.environ.get('PATH_TO_PRIVATE_KEY')
+PATH_TO_CERTIFICATE = os.environ.get('PATH_TO_CERTIFICATE')
+MESSAGE = "test"
+TOPIC = "cnt" 
+RANGE = 20
+myMQTTClinet = ""
+
+
+# 인원수 카운팅
+incount = 0
+outcount = 0
+countIds = []
+fallIds = []
+videoType = ['in', 'out', 'center']
+videoTypeNum = 0
+line = []  # x1, y1, x2, y2
+transmit = True
+transmitFrame = 0
+
+def IoTInit():
+    global myMQTTClinet
+    myMQTTClinet = AWSIoTMQTTClient(CLIENT_ID)
+    myMQTTClinet.configureEndpoint(ENDPOINT, 8883)
+    myMQTTClinet.configureCredentials(PATH_TO_AMAZON_ROOT_CA_1, PATH_TO_PRIVATE_KEY, PATH_TO_CERTIFICATE)
+    myMQTTClinet.configureOfflinePublishQueueing(-1)
+    myMQTTClinet.configureDrainingFrequency(2)
+    myMQTTClinet.configureConnectDisconnectTimeout(10)
+    myMQTTClinet.configureMQTTOperationTimeout(5)
+    print("Initiating IoT Core Topic ...")
+    myMQTTClinet.connect()
+
+def S3Init():
+    global s3
+    s3 = boto3.resource(
+            's3',
+            aws_access_key_id=ACCESS_KEY_ID,
+            aws_secret_access_key=ACCESS_SECRET_KEY,
+            config=Config(signature_version='s3v4')
+        )
 
 def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     if "ts" in file:
@@ -62,39 +93,6 @@ def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     # '로컬의 해당파일경로'+ 파일명 + 확장자
     s3.Bucket(BUCKET_NAME).put_object(
         Key= videoType + "/" + file, Body=data, ContentType=typ)
-
-
-# fs = set()
-# for (root, directories, files) in os.walk(DIR_PATH): # num of files 통신 문제
-#     print(files)
-#     for i in [0, -1]:
-#         print(files[i])
-#         handle_upload_img(files[i])
-
-
-
-# IoT
-
-CLIENT_ID = "MyTest"
-ENDPOINT =  os.environ.get('ENDPOINT')
-PATH_TO_AMAZON_ROOT_CA_1 =  os.environ.get('PATH_TO_AMAZON_ROOT_CA_1')
-
-PATH_TO_PRIVATE_KEY =  os.environ.get('PATH_TO_PRIVATE_KEY')
-PATH_TO_CERTIFICATE = os.environ.get('PATH_TO_CERTIFICATE')
-
-MESSAGE = "test"
-TOPIC = "test" 
-RANGE = 20
-
-myMQTTClinet = AWSIoTMQTTClient("MyTest")
-myMQTTClinet.configureEndpoint(ENDPOINT, 8883)
-myMQTTClinet.configureCredentials(PATH_TO_AMAZON_ROOT_CA_1, PATH_TO_PRIVATE_KEY, PATH_TO_CERTIFICATE)
-myMQTTClinet.configureOfflinePublishQueueing(-1)
-myMQTTClinet.configureDrainingFrequency(2)
-myMQTTClinet.configureConnectDisconnectTimeout(10)
-myMQTTClinet.configureMQTTOperationTimeout(5)
-print("Initiating IoT Core Topic ...")
-myMQTTClinet.connect()
 
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
@@ -164,6 +162,8 @@ def publish():
                     # os.remove(DIR_PATH + files[i])
 
 def detect(opt):
+    IoTInit()
+    S3Init()
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
         opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
         opt.save_txt, opt.img_size, opt.evaluate
@@ -177,12 +177,12 @@ def detect(opt):
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
         HLS_OUTPUT = HLS_OUTPUT + "in/"
-        DIR_PATH += "in/"
+        # DIR_PATH += "in/"
     elif "out" in source:
         videoTypeNum = 1
         line = [200, 190, 200, 280]
         HLS_OUTPUT = HLS_OUTPUT + "out/"
-        DIR_PATH += "out/"
+        # DIR_PATH += "out/"
     else:
         videoTypeNum = 2
         HLS_OUTPUT = HLS_OUTPUT + "center/"
@@ -385,6 +385,7 @@ def detect(opt):
 
             # 기준 line, text 출력
             text_scale = max(1, im0.shape[1] // 1600)
+
             if videoType[videoTypeNum] == 'in':
                 cv2.line(im0, (line[0], line[1]),
                         (line[2], line[3]), (255, 0, 0), 5)
