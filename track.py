@@ -19,16 +19,13 @@ import os
 import argparse
 import subprocess
 from datetime import datetime
-
 import time, json
 from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
-
 import boto3
 from botocore.client import Config
-
 import map
-
 from dotenv import load_dotenv
+import random
 
 from weather import check_weather
 
@@ -107,11 +104,26 @@ def run_ffmpeg(width, height, fps):
         '-s', "{}x{}".format(width, height),
         '-r', str(fps),
         '-i', '-',
-        '-hls_time', '5',
-        '-hls_list_size', '6',
+        '-c:v', 'libx264',  # x264 비디오 코덱 지정
+        '-g', '10',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)
+        '-hls_time', '10',
+        '-hls_list_size', '10',
+        '-force_key_frames', 'expr:gte(t,10*floor(n/10))',
         f'{HLS_OUTPUT}index.m3u8'
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
+
+# 인원수 카운팅
+incount = 0
+outcount = 0
+priorcount = -1
+countIds = []
+fallIds = []
+videoType = ['in', 'out', 'center']
+videoTypeNum = 0
+line = []  # x1, y1, x2, y2
+transmit = False
+transmitFrame = 0
 
 def isFall(tracks):
     for track in tracks:
@@ -122,6 +134,32 @@ def isFall(tracks):
                 fallIds.append(track.track_id)
                 return True
         return False
+
+def publish():
+    print("PUBLISH!!!!!!!!!!")
+
+    address = map.address()            
+    if videoType[videoTypeNum] == 'in':
+        message = {"count" : incount, "address" : address}
+        myMQTTClinet.publish(
+            topic = "in",
+            QoS=1,
+            payload= json.dumps(message)
+        )
+    elif videoType[videoTypeNum] == 'out':
+        message = {"count" : outcount, "address" : address}
+        myMQTTClinet.publish(
+            topic = "out",
+            QoS=1,
+            payload= json.dumps(message)
+        )
+
+    fs = set() # hls 파일 전송 #########################################################################
+    for (root, directories, files) in os.walk(DIR_PATH): # 
+            if len(files) > 0:
+                for i in [0, -1]:
+                    handle_upload_img(files[i], videoType[videoTypeNum])
+                    # os.remove(DIR_PATH + files[i])
 
 def detect(opt):
     IoTInit()
@@ -222,12 +260,11 @@ def detect(opt):
         # Inference
         t1 = time_sync()
         pred = model(img, augment=opt.augment)[0]
-
         # Apply NMS
         pred = non_max_suppression(
             pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t2 = time_sync()
-
+        
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -261,11 +298,11 @@ def detect(opt):
 
                 # 인원수 카운팅
                 tracks = deepsort.tracker.tracks
+                print('countIds:', countIds)
                 for track in tracks:
                     # print(track)
                     global incount
                     global outcount
-                    print(countIds)
                     if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
                         if(videoType[videoTypeNum] == 'in'):  # in count
                             if(track.track_id not in countIds and len(track.centroidarr) >= 3
@@ -302,22 +339,16 @@ def detect(opt):
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
                 global transmitFrame
+                print("fallIds: ", fallIds)
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
+                        # r = random.random()
+                        # if r < 0.005:
+                            # fallIds.append(r)
                             transmit = True
                             transmitFrame = 0
                             break
-                    print("fallIds: ", fallIds)
-
-
-                    # for d in det:
-                    #     width = d[2] - d[0]
-                    #     height = d[3] - d[1]
-                    #     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
-                    #         print("transmit video")
-                    #         break
-                    # print("fallIds: ", fallIds)
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -349,43 +380,29 @@ def detect(opt):
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
-            # 혼잡도 출력 및 전송#########################################################
+            # Stream results
+            im0 = annotator.result()
+
+            # 기준 line, text 출력
             text_scale = max(1, im0.shape[1] // 1600)
-           
+
             if videoType[videoTypeNum] == 'in':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
             elif videoType[videoTypeNum] == 'out':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
                 cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
 
 
-            # IoT 전송
-            count = abs(incount - outcount)
-            address = map.address() 
-            congestion = check_weather(count)
-            message = {"count" : count, "congestion" : congestion, "address" : address, "time" : datetime.now().strftime('%H:%M:%S')}
-            myMQTTClinet.publish(
-                    topic = TOPIC,
-                    QoS=1,
-                    payload= json.dumps(message) ##########################
-                )
-            """
-            fs = set() # hls 파일 전송 #################################
-            for (root, directories, files) in os.walk(DIR_PATH): # 
-                    if len(files) > 0:
-                        for i in [0, -1]:
-                            handle_upload_img(files[i], videoType[videoTypeNum])
-                            # os.remove(DIR_PATH + files[i])
-            """
-            # 기준 line 출력
-            if videoType[videoTypeNum] != 'center':
-                cv2.line(im0, (line[0], line[1]),
-                        (line[2], line[3]), (255, 0, 0), 5)
-
-
-            # Stream results
-            im0 = annotator.result()
+            # 혼잡도 출력 및 전송#########################################################
+            global priorcount
+            if priorcount != incount:
+                publish()
+                priorcount = incount
 
             if show_vid:
                 cv2.imshow(p, im0)
@@ -393,11 +410,12 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            if transmit and transmitFrame < 125:
+            if transmit and transmitFrame < 350:
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
 
-            if transmitFrame == 125:
+            if transmitFrame >= 350:
+                print("finish video")
                 transmitFrame = 0
                 transmit = False
 
