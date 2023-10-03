@@ -384,9 +384,10 @@ def detect(opt):
 
             fs = set() # hls 파일 전송 #########################################################################
             for (root, directories, files) in os.walk(DIR_PATH): # 
-                    for i in [0, -1]:
-                        handle_upload_img(files[i], videoType[videoTypeNum])
-                        # os.remove(DIR_PATH + files[i])
+                    if len(files) > 0:
+                        for i in [0, -1]:
+                            handle_upload_img(files[i], videoType[videoTypeNum])
+                            # os.remove(DIR_PATH + files[i])
             # 기준 line 출력
             if videoType[videoTypeNum] != 'center':
                 cv2.line(im0, (line[0], line[1]),
@@ -402,11 +403,11 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            if transmit and transmitFrame < 121:
+            if transmit and transmitFrame < 125:
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
 
-            if transmitFrame == 121:
+            if transmitFrame == 125:
                 transmitFrame = 0
                 transmit = False
 
