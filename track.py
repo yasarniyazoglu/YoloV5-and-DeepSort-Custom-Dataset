@@ -47,17 +47,13 @@ fallIds = []
 videoType = ['in', 'out', 'center']
 videoTypeNum = 0
 line = []  # x1, y1, x2, y2
+transmit = True
+transmitFrame = 0
 
 def isFall(tracks):
     for track in tracks:
         # print('test')
         if(len(track.height) >= 3):
-            # print('-2c: ', track.centroidarr[-2][1])
-            # print('-1h: ', track.height[-1])
-            # print('-1c: ', track.centroidarr[-1][1])
-            print('-3', track.height[-3])
-            print('-2', track.height[-2])
-            print('-1', track.height[-1])
             if(track.track_id not in fallIds and ((track.height[-2]/2 > track.height[-1]) 
                                                   or (track.height[-3]/2 > track.height[-1]))):
                 fallIds.append(track.track_id)
@@ -235,16 +231,12 @@ def detect(opt):
 
                 # fall detection
                 # if(videoType[videoTypeNum] == 'center'):
+                global transmit
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
-                            print("transmit video")
+                            transmit = True
                             break
-                        # if height < 200:
-                        #     print('test2')
-                        #     if(isFall(tracks)):
-                        #         print('test3')
-                        
                     print("fallIds: ", fallIds)
 
 
@@ -309,7 +301,14 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            ffmpeg_process.stdin.write(im0)
+            global transmitFrame
+            if transmit and transmitFrame < 121:
+                ffmpeg_process.stdin.write(im0)
+                transmitFrame += 1
+
+            if transmitFrame == 121:
+                transmitFrame = 0
+                transmit = False
 
             # Save results (image with detections)
             if save_vid:
