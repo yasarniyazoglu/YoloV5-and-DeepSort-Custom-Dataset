@@ -19,7 +19,6 @@ import platform
 import os
 import argparse
 import subprocess
-from django.utils import timezone
 from datetime import datetime
 
 import time, json
@@ -41,7 +40,7 @@ from dotenv import load_dotenv
 # from myyl.models import Bus
 
 load_dotenv()
-HLS_OUTPUT = os.environ.get('HLSTPATH')
+HLS_OUTPUT = os.environ.get('HLSPATH')
 
 # S3
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
@@ -147,6 +146,7 @@ def detect(opt):
     global HLS_OUTPUT
     global videoTypeNum
     global line
+    global DIR_PATH
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
         HLS_OUTPUT = HLS_OUTPUT + "in/"
@@ -312,10 +312,12 @@ def detect(opt):
                 # fall detection
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
+                global transmitFrame
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
                             transmit = True
+                            transmitFrame = 0
                             break
                     print("fallIds: ", fallIds)
 
@@ -383,7 +385,7 @@ def detect(opt):
             fs = set() # hls 파일 전송 #########################################################################
             for (root, directories, files) in os.walk(DIR_PATH): # 
                     for i in [0, -1]:
-                        handle_upload_img(files[i], videoType)
+                        handle_upload_img(files[i], videoType[videoTypeNum])
                         # os.remove(DIR_PATH + files[i])
             # 기준 line 출력
             if videoType[videoTypeNum] != 'center':
@@ -400,7 +402,6 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            global transmitFrame
             if transmit and transmitFrame < 121:
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
