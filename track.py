@@ -236,7 +236,7 @@ def detect(opt):
 
         # Apply NMS
         pred = non_max_suppression(
-            pred, opt.conf_thres, opt.iou_thres, classes=1, agnostic=opt.agnostic_nms)
+            pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t2 = time_sync()
 
         # Process detections
