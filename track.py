@@ -20,15 +20,11 @@ import os
 import argparse
 import subprocess
 from datetime import datetime
-
 import time, json
 from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
-
 import boto3
 from botocore.client import Config
-
 import map
-
 from dotenv import load_dotenv
 
 # sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
@@ -118,6 +114,7 @@ def run_ffmpeg(width, height, fps):
 # 인원수 카운팅
 incount = 0
 outcount = 0
+priorcount = -1
 countIds = []
 fallIds = []
 videoType = ['in', 'out', 'center']
@@ -135,6 +132,35 @@ def isFall(tracks):
                 fallIds.append(track.track_id)
                 return True
         return False
+
+def publish():
+    print("PUBLISH!!!!!!!!!!")
+
+    address = map.address()            
+    if videoType[videoTypeNum] == 'in':
+        message = {"count" : incount, "address" : address}
+        myMQTTClinet.publish(
+            topic = "in",
+            QoS=1,
+            payload= json.dumps(message)
+        )
+    elif videoType[videoTypeNum] == 'out':
+        message = {"count" : outcount, "address" : address}
+        myMQTTClinet.publish(
+            topic = "out",
+            QoS=1,
+            payload= json.dumps(message)
+        )
+
+    fs = set() # hls 파일 전송 #########################################################################
+    for (root, directories, files) in os.walk(DIR_PATH): # 
+            if len(files) > 0:
+                for i in [0, -1]:
+                    handle_upload_img(files[i], videoType[videoTypeNum])
+                    # os.remove(DIR_PATH + files[i])
+
+    # thread = threading.Timer(60, publish)
+    # thread.start()
 
 def detect(opt):
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
@@ -233,12 +259,11 @@ def detect(opt):
         # Inference
         t1 = time_sync()
         pred = model(img, augment=opt.augment)[0]
-
         # Apply NMS
         pred = non_max_suppression(
             pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t2 = time_sync()
-
+        
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -272,11 +297,11 @@ def detect(opt):
 
                 # 인원수 카운팅
                 tracks = deepsort.tracker.tracks
+                print('countIds:', countIds)
                 for track in tracks:
                     # print(track)
                     global incount
                     global outcount
-                    print(countIds)
                     if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
                         if(videoType[videoTypeNum] == 'in'):  # in count
                             if(track.track_id not in countIds and len(track.centroidarr) >= 3
@@ -313,14 +338,13 @@ def detect(opt):
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
                 global transmitFrame
+                print("fallIds: ", fallIds)
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
                             transmit = True
                             transmitFrame = 0
                             break
-                    print("fallIds: ", fallIds)
-
 
                     # for d in det:
                     #     width = d[2] - d[0]
@@ -360,42 +384,28 @@ def detect(opt):
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
-            # 혼잡도 출력 및 전송#########################################################
-            text_scale = max(1, im0.shape[1] // 1600)
-            address = map.address()            
-            if videoType[videoTypeNum] == 'in':
-                cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
-                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
-                message = {"count" : incount, "address" : address}
-                myMQTTClinet.publish(
-                    topic = "in",
-                    QoS=1,
-                    payload= json.dumps(message)
-                )
-            elif videoType[videoTypeNum] == 'out':
-                cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
-                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
-                message = {"count" : outcount, "address" : address}
-                myMQTTClinet.publish(
-                    topic = "out",
-                    QoS=1,
-                    payload= json.dumps(message)
-                )
-
-            fs = set() # hls 파일 전송 #########################################################################
-            for (root, directories, files) in os.walk(DIR_PATH): # 
-                    if len(files) > 0:
-                        for i in [0, -1]:
-                            handle_upload_img(files[i], videoType[videoTypeNum])
-                            # os.remove(DIR_PATH + files[i])
-            # 기준 line 출력
-            if videoType[videoTypeNum] != 'center':
-                cv2.line(im0, (line[0], line[1]),
-                        (line[2], line[3]), (255, 0, 0), 5)
-
-
             # Stream results
             im0 = annotator.result()
+
+            # 기준 line, text 출력
+            text_scale = max(1, im0.shape[1] // 1600)
+            if videoType[videoTypeNum] == 'in':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
+                cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
+                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
+            elif videoType[videoTypeNum] == 'out':
+                cv2.line(im0, (line[0], line[1]),
+                        (line[2], line[3]), (255, 0, 0), 5)
+                cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
+                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
+
+
+            # 혼잡도 출력 및 전송#########################################################
+            global priorcount
+            if priorcount != incount:
+                publish()
+                priorcount = incount
 
             if show_vid:
                 cv2.imshow(p, im0)
@@ -408,6 +418,7 @@ def detect(opt):
                 transmitFrame += 1
 
             if transmitFrame == 125:
+                print("finish video")
                 transmitFrame = 0
                 transmit = False
 
