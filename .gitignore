@@ -1,1 +1,6 @@
 .vscode/
+.env
+*.mp4
+hls/
+*.m3u8
+*.ts
