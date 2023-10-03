@@ -26,6 +26,7 @@ import boto3
 from botocore.client import Config
 import map
 from dotenv import load_dotenv
+import random
 
 # sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 # sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))
@@ -105,8 +106,11 @@ def run_ffmpeg(width, height, fps):
         '-s', "{}x{}".format(width, height),
         '-r', str(fps),
         '-i', '-',
-        '-hls_time', '5',
-        '-hls_list_size', '6',
+        '-c:v', 'libx264',  # x264 비디오 코덱 지정
+        '-g', '10',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)
+        '-hls_time', '10',
+        '-hls_list_size', '10',
+        '-force_key_frames', 'expr:gte(t,10*floor(n/10))',
         f'{HLS_OUTPUT}index.m3u8'
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
@@ -120,7 +124,7 @@ fallIds = []
 videoType = ['in', 'out', 'center']
 videoTypeNum = 0
 line = []  # x1, y1, x2, y2
-transmit = True
+transmit = False
 transmitFrame = 0
 
 def isFall(tracks):
@@ -158,9 +162,6 @@ def publish():
                 for i in [0, -1]:
                     handle_upload_img(files[i], videoType[videoTypeNum])
                     # os.remove(DIR_PATH + files[i])
-
-    # thread = threading.Timer(60, publish)
-    # thread.start()
 
 def detect(opt):
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
@@ -342,17 +343,12 @@ def detect(opt):
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         if isFall(tracks):
+                        # r = random.random()
+                        # if r < 0.005:
+                            # fallIds.append(r)
                             transmit = True
                             transmitFrame = 0
                             break
-
-                    # for d in det:
-                    #     width = d[2] - d[0]
-                    #     height = d[3] - d[1]
-                    #     if names[int(d[-1])] == 'person' and isFall(tracks, width, height):
-                    #         print("transmit video")
-                    #         break
-                    # print("fallIds: ", fallIds)
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -413,11 +409,11 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            if transmit and transmitFrame < 125:
+            if transmit and transmitFrame < 350:
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
 
-            if transmitFrame == 125:
+            if transmitFrame >= 350:
                 print("finish video")
                 transmitFrame = 0
                 transmit = False
