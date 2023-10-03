@@ -9,20 +9,97 @@ from yolov5.utils.torch_utils import select_device, time_sync
 from yolov5.utils.plots import Annotator, colors
 from deep_sort_pytorch.utils.parser import get_config
 from deep_sort_pytorch.deep_sort import DeepSort
-import argparse
-import os
-import platform
-import shutil
-import time
-from pathlib import Path
-import cv2
-import torch
 import torch.backends.cudnn as cudnn
+import torch
+import cv2
+from pathlib import Path
+import time
+import shutil
+import platform
+import os
+import argparse
 import subprocess
+from django.utils import timezone
+from datetime import datetime
+
+import time, json
+from AWSIoTPythonSDK.MQTTLib import AWSIoTMQTTClient
+
+import boto3
+from botocore.client import Config
+
+import map
+
 from dotenv import load_dotenv
 
+# sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+# sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))))
+# os.environ.setdefault("DJANGO_SETTINGS_MODULE", "config.settings")
+# django.setup()
+#print(sys.path)
+
+# from myyl.models import Bus
+
 load_dotenv()
-HLS_OUTPUT = os.environ.get('HLSPATH')
+HLS_OUTPUT = os.environ.get('HLSTPATH')
+
+# S3
+ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
+ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
+BUCKET_NAME = 'traffic-inf'
+DIR_PATH = "hls/"
+
+s3 = boto3.resource(
+        's3',
+        aws_access_key_id=ACCESS_KEY_ID,
+        aws_secret_access_key=ACCESS_SECRET_KEY,
+        config=Config(signature_version='s3v4')
+    )
+
+def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
+    if "ts" in file:
+        typ = "video/MP2T"
+    else:
+        typ = "application/x-mpegURL"
+
+    data = open(DIR_PATH + file, 'rb')
+    # '로컬의 해당파일경로'+ 파일명 + 확장자
+    s3.Bucket(BUCKET_NAME).put_object(
+        Key= videoType + "/" + file, Body=data, ContentType=typ)
+
+
+# fs = set()
+# for (root, directories, files) in os.walk(DIR_PATH): # num of files 통신 문제
+#     print(files)
+#     for i in [0, -1]:
+#         print(files[i])
+#         handle_upload_img(files[i])
+
+
+
+# IoT
+
+CLIENT_ID = "MyTest"
+ENDPOINT =  os.environ.get('ENDPOINT')
+PATH_TO_AMAZON_ROOT_CA_1 =  os.environ.get('PATH_TO_AMAZON_ROOT_CA_1')
+
+PATH_TO_PRIVATE_KEY =  os.environ.get('PATH_TO_PRIVATE_KEY')
+PATH_TO_CERTIFICATE = os.environ.get('PATH_TO_CERTIFICATE')
+
+MESSAGE = "test"
+TOPIC = "test" 
+RANGE = 20
+
+myMQTTClinet = AWSIoTMQTTClient("MyTest")
+myMQTTClinet.configureEndpoint(ENDPOINT, 8883)
+myMQTTClinet.configureCredentials(PATH_TO_AMAZON_ROOT_CA_1, PATH_TO_PRIVATE_KEY, PATH_TO_CERTIFICATE)
+myMQTTClinet.configureOfflinePublishQueueing(-1)
+myMQTTClinet.configureDrainingFrequency(2)
+myMQTTClinet.configureConnectDisconnectTimeout(10)
+myMQTTClinet.configureMQTTOperationTimeout(5)
+print("Initiating IoT Core Topic ...")
+myMQTTClinet.connect()
+
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
         'ffmpeg',
@@ -77,13 +154,16 @@ def detect(opt):
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
         HLS_OUTPUT = HLS_OUTPUT + "in/"
+        DIR_PATH += "in/"
     elif "out" in source:
         videoTypeNum = 1
         line = [200, 190, 200, 280]
         HLS_OUTPUT = HLS_OUTPUT + "out/"
+        DIR_PATH += "out/"
     else:
         videoTypeNum = 2
         HLS_OUTPUT = HLS_OUTPUT + "center/"
+        DIR_PATH += "fall/"
 
     # initialize deepsort
     cfg = get_config()
@@ -160,7 +240,7 @@ def detect(opt):
 
         # Apply NMS
         pred = non_max_suppression(
-            pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+            pred, opt.conf_thres, opt.iou_thres, classes=1, agnostic=opt.agnostic_nms)
         t2 = time_sync()
 
         # Process detections
@@ -255,7 +335,6 @@ def detect(opt):
                     #         print("transmit video")
                     #         break
                     # print("fallIds: ", fallIds)
-                    
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -287,22 +366,42 @@ def detect(opt):
             # Print time (inference + NMS)
             print('%sDone. (%.3fs)' % (s, t2 - t1))
 
+            # 혼잡도 출력 및 전송#########################################################
+            text_scale = max(1, im0.shape[1] // 1600)
+            address = map.address()            
+            if videoType[videoTypeNum] == 'in':
+                cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
+                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
+                message = {"count" : incount, "address" : address}
+                myMQTTClinet.publish(
+                    topic = "in",
+                    QoS=1,
+                    payload= json.dumps(message)
+                )
+            elif videoType[videoTypeNum] == 'out':
+                cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
+                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
+                message = {"count" : outcount, "address" : address}
+                myMQTTClinet.publish(
+                    topic = "out",
+                    QoS=1,
+                    payload= json.dumps(message)
+                )
+
+            fs = set() # hls 파일 전송 #########################################################################
+            for (root, directories, files) in os.walk(DIR_PATH): # 
+                    for i in [0, -1]:
+                        handle_upload_img(files[i], videoType)
+                        # os.remove(DIR_PATH + files[i])
             # 기준 line 출력
             if videoType[videoTypeNum] != 'center':
                 cv2.line(im0, (line[0], line[1]),
                         (line[2], line[3]), (255, 0, 0), 5)
 
-            # 인원수 출력
-            text_scale = max(1, im0.shape[1] // 1600)
-            if videoType[videoTypeNum] == 'in':
-                cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
-                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
-            elif videoType[videoTypeNum] == 'out':
-                cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
-                            cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
 
             # Stream results
             im0 = annotator.result()
+
             if show_vid:
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
@@ -322,7 +421,8 @@ def detect(opt):
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                     else:  # stream
-                        fps, w, h = 30, im0.shape[1], im0.shape[0]
+                        fps, w, h = 6, im0.shape[1], im0.shape[0]
+                        print(w, h)
                         save_path += '.mp4'
 
                     vid_writer = cv2.VideoWriter(
@@ -344,8 +444,8 @@ if __name__ == '__main__':
     parser.add_argument('--deep_sort_weights', type=str,
                         default='deep_sort_pytorch/deep_sort/deep/checkpoint/ckpt.t7', help='ckpt.t7 path')
     # file/folder, 0 for webcam
-    parser.add_argument('--source', type=str, default='0', help='source')
-    parser.add_argument('--output', type=str, default='inference/output',
+    parser.add_argument('--source', type=str, default='in.mp4', help='source')
+    parser.add_argument('--output', type=str, default='inference/output/' + datetime.now().strftime('%H.%M.%S'),
                         help='output folder')  # output folder
     parser.add_argument('--img-size', type=int, default=640,
                         help='inference size (pixels)')
