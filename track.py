@@ -26,7 +26,6 @@ from botocore.client import Config
 import map
 from dotenv import load_dotenv
 import random
-
 from weather import check_weather
 
 load_dotenv()
@@ -61,6 +60,7 @@ videoTypeNum = 0
 line = []  # x1, y1, x2, y2
 transmit = True
 transmitFrame = 0
+fallIdx = 0
 
 def IoTInit():
     global myMQTTClinet
@@ -92,7 +92,7 @@ def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     data = open(DIR_PATH + file, 'rb')
     # '로컬의 해당파일경로'+ 파일명 + 확장자
     s3.Bucket(BUCKET_NAME).put_object(
-        Key= videoType + "/" + file, Body=data, ContentType=typ)
+        Key= videoType + "/" + str(fallIdx) + '/' + file, Body=data, ContentType=typ)
 
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
@@ -105,10 +105,10 @@ def run_ffmpeg(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',  # x264 비디오 코덱 지정
-        '-g', '10',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)
-        '-hls_time', '10',
+        '-g', '60',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)  
+        '-hls_time', f'{60/fps}',
         '-hls_list_size', '10',
-        '-force_key_frames', 'expr:gte(t,10*floor(n/10))',
+        '-force_key_frames', f'expr:gte(t,n_forced*{60})',  # 키프레임 간격을 맞추기 위한 설정
         f'{HLS_OUTPUT}index.m3u8'
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
@@ -122,7 +122,7 @@ fallIds = []
 videoType = ['in', 'out', 'center']
 videoTypeNum = 0
 line = []  # x1, y1, x2, y2
-transmit = False
+transmit = True
 transmitFrame = 0
 
 def isFall(tracks):
@@ -140,26 +140,19 @@ def publish():
 
     address = map.address()            
     if videoType[videoTypeNum] == 'in':
-        message = {"count" : incount, "address" : address}
+        message = {"count" : incount, "address" : address, "num" : fallIdx}
         myMQTTClinet.publish(
             topic = "in",
             QoS=1,
             payload= json.dumps(message)
         )
     elif videoType[videoTypeNum] == 'out':
-        message = {"count" : outcount, "address" : address}
+        message = {"count" : outcount, "address" : address, "num" : fallIdx}
         myMQTTClinet.publish(
-            topic = "out",
+            topic = "out",  
             QoS=1,
             payload= json.dumps(message)
         )
-
-    fs = set() # hls 파일 전송 #########################################################################
-    for (root, directories, files) in os.walk(DIR_PATH): # 
-            if len(files) > 0:
-                for i in [0, -1]:
-                    handle_upload_img(files[i], videoType[videoTypeNum])
-                    # os.remove(DIR_PATH + files[i])
 
 def detect(opt):
     IoTInit()
@@ -174,18 +167,19 @@ def detect(opt):
     global videoTypeNum
     global line
     global DIR_PATH
+    global fallIdx
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
-        HLS_OUTPUT = HLS_OUTPUT + "in/"
-        # DIR_PATH += "in/"
+        HLS_OUTPUT = HLS_OUTPUT + "in/" + str(fallIdx)
+        DIR_PATH += "in/" # remove
     elif "out" in source:
         videoTypeNum = 1
         line = [200, 190, 200, 280]
-        HLS_OUTPUT = HLS_OUTPUT + "out/"
-        # DIR_PATH += "out/"
+        HLS_OUTPUT = HLS_OUTPUT + "out/" + str(fallIdx)
+        DIR_PATH += "out/" 
     else:
         videoTypeNum = 2
-        HLS_OUTPUT = HLS_OUTPUT + "center/"
+        HLS_OUTPUT = HLS_OUTPUT + "center/" + str(fallIdx)
         DIR_PATH += "fall/"
 
     # initialize deepsort
@@ -339,13 +333,15 @@ def detect(opt):
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
                 global transmitFrame
+                # global fallIdx
                 print("fallIds: ", fallIds)
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
-                        if isFall(tracks):
-                        # r = random.random()
-                        # if r < 0.005:
-                            # fallIds.append(r)
+                        r = random.random()
+                        if r < 0.05 and transmit != True:
+                            fallIds.append(r)
+                        # if isFall(tracks) and transmit != True:
+                            fallIdx += 1
                             transmit = True
                             transmitFrame = 0
                             break
@@ -410,33 +406,23 @@ def detect(opt):
                     raise StopIteration
 
             # hls 변환하기 위한 subprocess 생성
-            if transmit and transmitFrame < 350:
+            if transmit and transmitFrame < 180:
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
 
-            if transmitFrame >= 350:
+            if transmitFrame >= 180:
                 print("finish video")
+                ffmpeg_process.stdin.close()
+                ffmpeg_process = run_ffmpeg(720, 480, 6)
                 transmitFrame = 0
                 transmit = False
 
-            # Save results (image with detections)
-            if save_vid:
-                if vid_path != save_path:  # new video
-                    vid_path = save_path
-                    if isinstance(vid_writer, cv2.VideoWriter):
-                        vid_writer.release()  # release previous video writer
-                    if vid_cap:  # video
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                    else:  # stream
-                        fps, w, h = 6, im0.shape[1], im0.shape[0]
-                        print(w, h)
-                        save_path += '.mp4'
-
-                    vid_writer = cv2.VideoWriter(
-                        save_path, cv2.VideoWriter_fourcc(*'mp4v'), fps, (w, h))
-                vid_writer.write(im0)
+            fs = set() # hls 파일 전송 #########################################################################
+            for (root, directories, files) in os.walk(DIR_PATH): # 
+                if len(files) > 0:
+                    for i in [0, -1]:
+                        handle_upload_img(files[i], videoType[videoTypeNum])
+                        # os.remove(DIR_PATH + files[i])
 
     if save_txt or save_vid:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
