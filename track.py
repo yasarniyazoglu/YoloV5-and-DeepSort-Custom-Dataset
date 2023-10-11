@@ -29,7 +29,8 @@ import random
 from weather import check_weather
 
 load_dotenv()
-HLS_OUTPUT = os.environ.get('HLSPATH')
+HLS_PATH = os.environ.get('HLSPATH')
+HLS_OUTPUT = HLS_PATH
 
 # S3
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
@@ -113,6 +114,13 @@ def run_ffmpeg(width, height, fps):
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
 
+def createDirectory(directory):
+    try:
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+    except OSError:
+        print("Error: Failed to create the directory.")
+
 # 인원수 카운팅
 incount = 0
 outcount = 0
@@ -170,17 +178,19 @@ def detect(opt):
     global fallIdx
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
-        HLS_OUTPUT = HLS_OUTPUT + "in/" + str(fallIdx)
-        DIR_PATH += "in/" # remove
+        HLS_OUTPUT = HLS_OUTPUT + "in/" + str(fallIdx) + '/'
+        DIR_PATH += "in/" + str(fallIdx) + '/' # remove
     elif "out" in source:
         videoTypeNum = 1
         line = [200, 190, 200, 280]
-        HLS_OUTPUT = HLS_OUTPUT + "out/" + str(fallIdx)
-        DIR_PATH += "out/" 
+        HLS_OUTPUT = HLS_OUTPUT + "out/" + str(fallIdx) + '/'
+        DIR_PATH += "out/" + str(fallIdx) + '/'
     else:
         videoTypeNum = 2
-        HLS_OUTPUT = HLS_OUTPUT + "center/" + str(fallIdx)
+        HLS_OUTPUT = HLS_OUTPUT + "center/" + str(fallIdx) + '/'
         DIR_PATH += "fall/"
+
+    createDirectory(HLS_OUTPUT)
 
     # initialize deepsort
     cfg = get_config()
@@ -333,6 +343,7 @@ def detect(opt):
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
                 global transmitFrame
+                global HLS_PATH
                 # global fallIdx
                 print("fallIds: ", fallIds)
                 for track in tracks:
@@ -342,6 +353,10 @@ def detect(opt):
                             fallIds.append(r)
                         # if isFall(tracks) and transmit != True:
                             fallIdx += 1
+                            HLS_OUTPUT = HLS_PATH + "in/" + str(fallIdx) + '/'
+                            DIR_PATH = "hls/in/" + str(fallIdx) + '/'
+                            createDirectory(HLS_OUTPUT)
+                            ffmpeg_process = run_ffmpeg(720, 480, 6)
                             transmit = True
                             transmitFrame = 0
                             break
@@ -413,15 +428,15 @@ def detect(opt):
             if transmitFrame >= 180:
                 print("finish video")
                 ffmpeg_process.stdin.close()
-                ffmpeg_process = run_ffmpeg(720, 480, 6)
+
                 transmitFrame = 0
                 transmit = False
 
             fs = set() # hls 파일 전송 #########################################################################
             for (root, directories, files) in os.walk(DIR_PATH): # 
                 if len(files) > 0:
-                    for i in [0, -1]:
-                        handle_upload_img(files[i], videoType[videoTypeNum])
+                    for file in files:
+                        handle_upload_img(file, videoType[videoTypeNum])
                         # os.remove(DIR_PATH + files[i])
 
     if save_txt or save_vid:
