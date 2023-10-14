@@ -65,7 +65,7 @@ line = []  # x1, y1, x2, y2
 # fall detection
 fallIdx = 0
 fallIds = []
-transmit = True
+transmit = False
 transmitFrame = 0
 
 def IoTInit():
@@ -99,7 +99,6 @@ def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     # '로컬의 해당파일경로'+ 파일명 + 확장자
     s3.Bucket(BUCKET_NAME).put_object(
         Key= f'{busNum}/{fallIdx}/{file}', Body=data, ContentType=typ)
-    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
