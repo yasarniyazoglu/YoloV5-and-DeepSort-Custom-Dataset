@@ -36,7 +36,6 @@ HLS_OUTPUT = HLS_PATH
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
-DIR_PATH = "hls/"
 s3 = ""
 
 # IoT
@@ -51,17 +50,23 @@ RANGE = 20
 myMQTTClinet = ""
 
 
-# 인원수 카운팅
-incount = 0
-outcount = 0
-countIds = []
-fallIds = []
+# input video
 videoType = ['in', 'out', 'center']
 videoTypeNum = 0
+
+# 인원수 카운팅
+busNum = os.environ.get('BUSNUM')
+incount = 0
+outcount = 0
+priorcount = -1
+countIds = []
 line = []  # x1, y1, x2, y2
+
+# fall detection
+fallIdx = 0
+fallIds = []
 transmit = True
 transmitFrame = 0
-fallIdx = 0
 
 def IoTInit():
     global myMQTTClinet
@@ -90,10 +95,11 @@ def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     else:
         typ = "application/x-mpegURL"
 
-    data = open(DIR_PATH + file, 'rb')
+    data = open(HLS_OUTPUT + file, 'rb')
     # '로컬의 해당파일경로'+ 파일명 + 확장자
     s3.Bucket(BUCKET_NAME).put_object(
-        Key= videoType + "/" + str(fallIdx) + '/' + file, Body=data, ContentType=typ)
+        Key= f'{busNum}/{fallIdx}/{file}', Body=data, ContentType=typ)
+    print("@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@")
 
 def run_ffmpeg(width, height, fps):
     ffmpg_cmd = [
@@ -121,18 +127,6 @@ def createDirectory(directory):
     except OSError:
         print("Error: Failed to create the directory.")
 
-# 인원수 카운팅
-incount = 0
-outcount = 0
-priorcount = -1
-countIds = []
-fallIds = []
-videoType = ['in', 'out', 'center']
-videoTypeNum = 0
-line = []  # x1, y1, x2, y2
-transmit = True
-transmitFrame = 0
-
 def isFall(tracks):
     for track in tracks:
         # print('test')
@@ -150,14 +144,14 @@ def publish():
     if videoType[videoTypeNum] == 'in':
         message = {"count" : incount, "address" : address, "num" : fallIdx}
         myMQTTClinet.publish(
-            topic = "in",
+            topic = f'/{busNum}/in',
             QoS=1,
             payload= json.dumps(message)
         )
     elif videoType[videoTypeNum] == 'out':
         message = {"count" : outcount, "address" : address, "num" : fallIdx}
         myMQTTClinet.publish(
-            topic = "out",  
+            topic = f'/{busNum}/out', 
             QoS=1,
             payload= json.dumps(message)
         )
@@ -174,21 +168,15 @@ def detect(opt):
     global HLS_OUTPUT
     global videoTypeNum
     global line
-    global DIR_PATH
     global fallIdx
     if "in" in source:  # in 이라는 글자가 포함되면 true
         line = [200, 190, 200, 380]
-        HLS_OUTPUT = HLS_OUTPUT + "in/" + str(fallIdx) + '/'
-        DIR_PATH += "in/" + str(fallIdx) + '/' # remove
+        HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' # for test 
     elif "out" in source:
         videoTypeNum = 1
         line = [200, 190, 200, 280]
-        HLS_OUTPUT = HLS_OUTPUT + "out/" + str(fallIdx) + '/'
-        DIR_PATH += "out/" + str(fallIdx) + '/'
     else:
         videoTypeNum = 2
-        HLS_OUTPUT = HLS_OUTPUT + "center/" + str(fallIdx) + '/'
-        DIR_PATH += "fall/"
 
     createDirectory(HLS_OUTPUT)
 
@@ -343,18 +331,15 @@ def detect(opt):
                 # if(videoType[videoTypeNum] == 'center'):
                 global transmit
                 global transmitFrame
-                global HLS_PATH
-                # global fallIdx
                 print("fallIds: ", fallIds)
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         r = random.random()
+                        # if isFall(tracks) and transmit != True:
                         if r < 0.05 and transmit != True:
                             fallIds.append(r)
-                        # if isFall(tracks) and transmit != True:
                             fallIdx += 1
-                            HLS_OUTPUT = HLS_PATH + "in/" + str(fallIdx) + '/'
-                            DIR_PATH = "hls/in/" + str(fallIdx) + '/'
+                            HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/'
                             createDirectory(HLS_OUTPUT)
                             ffmpeg_process = run_ffmpeg(720, 480, 6)
                             transmit = True
@@ -432,12 +417,13 @@ def detect(opt):
                 transmitFrame = 0
                 transmit = False
 
-            fs = set() # hls 파일 전송 #########################################################################
-            for (root, directories, files) in os.walk(DIR_PATH): # 
-                if len(files) > 0:
-                    for file in files:
-                        handle_upload_img(file, videoType[videoTypeNum])
-                        # os.remove(DIR_PATH + files[i])
+            if(transmit == True):
+                fs = set() # hls 파일 전송 #########################################################################
+                for (root, directories, files) in os.walk(HLS_OUTPUT): # 
+                    if len(files) > 0:
+                        for file in files:
+                            handle_upload_img(file, videoType[videoTypeNum])
+
 
     if save_txt or save_vid:
         print('Results saved to %s' % os.getcwd() + os.sep + out)
