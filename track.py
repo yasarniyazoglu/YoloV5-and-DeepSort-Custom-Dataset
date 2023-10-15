@@ -32,11 +32,12 @@ load_dotenv()
 HLS_PATH = os.environ.get('HLSPATH')
 HLS_OUTPUT = HLS_PATH
 
-# S3
+# S3 영상 저장
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
 s3 = ""
+priorFilesCount = 0
 
 # IoT
 CLIENT_ID = "MyTest"
@@ -68,6 +69,7 @@ fallIds = []
 transmit = False
 transmitFrame = 0
 
+
 def IoTInit():
     global myMQTTClinet
     myMQTTClinet = AWSIoTMQTTClient(CLIENT_ID)
@@ -90,6 +92,7 @@ def S3Init():
         )
 
 def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
+    print("upload_img!!")
     if "ts" in file:
         typ = "video/MP2T"
     else:
@@ -112,7 +115,7 @@ def run_ffmpeg(width, height, fps):
         '-i', '-',
         '-c:v', 'libx264',  # x264 비디오 코덱 지정
         '-g', '60',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)  
-        '-hls_time', f'{60/fps}',
+        '-hls_time', '10',
         '-hls_list_size', '10',
         '-force_key_frames', f'expr:gte(t,n_forced*{60})',  # 키프레임 간격을 맞추기 위한 설정
         f'{HLS_OUTPUT}index.m3u8'
@@ -239,7 +242,7 @@ def detect(opt):
 
     # img = next(iter(dataset))[1]
     # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
-    ffmpeg_process = run_ffmpeg(720, 480, 6)
+    # ffmpeg_process = run_ffmpeg(720, 480, 6)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -333,16 +336,16 @@ def detect(opt):
                 print("fallIds: ", fallIds)
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
-                        r = random.random()
-                        # if isFall(tracks) and transmit != True:
-                        if r < 0.05 and transmit != True:
-                            fallIds.append(r)
-                            fallIdx += 1
+                        # r = random.random()
+                        if transmit != True and isFall(tracks):
+                        # if r < 0.05 and transmit != True:
+                            # fallIds.append(r)
                             HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/'
                             createDirectory(HLS_OUTPUT)
                             ffmpeg_process = run_ffmpeg(720, 480, 6)
                             transmit = True
                             transmitFrame = 0
+                            fallIdx += 1
                             break
 
                 # draw boxes for visualization
@@ -403,7 +406,7 @@ def detect(opt):
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
-
+                
             # hls 변환하기 위한 subprocess 생성
             if transmit and transmitFrame < 180:
                 ffmpeg_process.stdin.write(im0)
@@ -412,16 +415,17 @@ def detect(opt):
             if transmitFrame >= 180:
                 print("finish video")
                 ffmpeg_process.stdin.close()
-
                 transmitFrame = 0
                 transmit = False
 
-            if(transmit == True):
-                fs = set() # hls 파일 전송 #########################################################################
-                for (root, directories, files) in os.walk(HLS_OUTPUT): # 
-                    if len(files) > 0:
-                        for file in files:
-                            handle_upload_img(file, videoType[videoTypeNum])
+            global priorFilesCount
+            for (root, directories, files) in os.walk(HLS_OUTPUT): # 
+                if len(files) > 0 and priorFilesCount != len(files):
+                    priorFilesCount = len(files)
+                    for file in files:
+                        handle_upload_img(file, videoType[videoTypeNum])
+                else:
+                    break
 
 
     if save_txt or save_vid:
