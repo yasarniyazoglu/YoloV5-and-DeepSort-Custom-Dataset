@@ -143,16 +143,23 @@ def publish():
 
     address = map.address()            
     if videoType[videoTypeNum] == 'in':
-        message = {"count" : incount, "address" : address, "num" : fallIdx}
+        message = {"count" : incount, "address" : address}
         myMQTTClinet.publish(
             topic = f'/{busNum}/in',
             QoS=1,
             payload= json.dumps(message)
         )
     elif videoType[videoTypeNum] == 'out':
-        message = {"count" : outcount, "address" : address, "num" : fallIdx}
+        message = {"count" : outcount, "address" : address}
         myMQTTClinet.publish(
-            topic = f'/{busNum}/out', 
+            topic = f'/{busNum}/in', 
+            QoS=1,
+            payload= json.dumps(message)
+        )
+    else:
+        message = {"address" : address, "accidentNum" : fallIdx}
+        myMQTTClinet.publish(
+            topic = f'/{busNum}/accident', 
             QoS=1,
             payload= json.dumps(message)
         )
@@ -344,6 +351,7 @@ def detect(opt):
                             ffmpeg_process = run_ffmpeg(720, 480, 6)
                             transmit = True
                             transmitFrame = 0
+                            publish()
                             fallIdx += 1
                             break
 
