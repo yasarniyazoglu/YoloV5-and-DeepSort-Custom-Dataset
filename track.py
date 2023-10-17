@@ -398,9 +398,13 @@ def detect(opt):
 
             # 혼잡도 출력 및 전송#########################################################
             global priorcount
-            if priorcount != incount:
+            if videoType[videoTypeNum] == 'in' and priorcount != incount:
                 publish()
                 priorcount = incount
+            
+            if videoType[videoTypeNum] == 'out' and priorcount != outcount:
+                publish()
+                priorcount = outcount
 
             if show_vid:
                 cv2.imshow(p, im0)
@@ -419,7 +423,7 @@ def detect(opt):
                 transmit = False
 
             global priorFilesCount
-            for (root, directories, files) in os.walk(HLS_OUTPUT): # 
+            for (root, directories, files) in os.walk(HLS_OUTPUT):  
                 if len(files) > 0 and priorFilesCount != len(files):
                     priorFilesCount = len(files)
                     for file in files:
