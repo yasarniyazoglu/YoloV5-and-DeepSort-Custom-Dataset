@@ -129,15 +129,14 @@ def createDirectory(directory):
     except OSError:
         print("Error: Failed to create the directory.")
 
-def isFall(tracks):
-    for track in tracks:
-        # print('test')
-        if(len(track.height) >= 3):
-            if(track.track_id not in fallIds and ((track.height[-2]/2 > track.height[-1]) 
-                                                  or (track.height[-3]/2 > track.height[-1]))):
-                fallIds.append(track.track_id)
-                return True
-        return False
+def isFall(track):
+    # print('test')
+    if(len(track.height) >= 3):
+        if(track.track_id not in fallIds and ((track.height[-2]/2 > track.height[-1]) 
+                                                or (track.height[-3]/2 > track.height[-1]))):
+            fallIds.append(track.track_id)
+            return True
+    return False
 
 def publish():
     print("PUBLISH!!!!!!!!!!")
@@ -337,7 +336,7 @@ def detect(opt):
                 for track in tracks:
                     if names[int(track.class_id)] == 'person':
                         # r = random.random()
-                        if transmit != True and isFall(tracks):
+                        if transmit != True and isFall(track):
                         # if r < 0.05 and transmit != True:
                             # fallIds.append(r)
                             HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/'
