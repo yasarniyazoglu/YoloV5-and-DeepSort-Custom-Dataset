@@ -37,7 +37,6 @@ ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
 s3 = ""
-priorFilesCount = 0
 
 # IoT
 CLIENT_ID = "MyTest"
@@ -147,21 +146,21 @@ def publish():
         myMQTTClinet.publish(
             topic = f'/{busNum}/in',
             QoS=1,
-            payload= json.dumps(message)
+            payload= json.dumps(message),
         )
     elif videoType[videoTypeNum] == 'out':
         message = {"count" : outcount, "address" : address}
         myMQTTClinet.publish(
             topic = f'/{busNum}/in', 
             QoS=1,
-            payload= json.dumps(message)
+            payload= json.dumps(message),
         )
     else:
         message = {"address" : address, "accidentNum" : fallIdx}
         myMQTTClinet.publish(
             topic = f'/{busNum}/accident', 
             QoS=1,
-            payload= json.dumps(message)
+            payload= json.dumps(message),
         )
 
 def detect(opt):
@@ -246,9 +245,9 @@ def detect(opt):
     txt_file_name = source.split('/')[-1].split('.')[0]
     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
 
-    # img = next(iter(dataset))[1]
-    # ffmpeg_process = run_ffmpeg(img.shape[0], img.shape[1], 6)
-    # ffmpeg_process = run_ffmpeg(720, 480, 6)
+    priorFilesCount = -1
+    for (root, directories, files) in os.walk(HLS_OUTPUT):
+        priorFilesCount = len(files)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -336,24 +335,21 @@ def detect(opt):
                                 countIds.append(track.track_id)
 
                 # fall detection
-                # if(videoType[videoTypeNum] == 'center'):
-                global transmit
-                global transmitFrame
-                print("fallIds: ", fallIds)
-                for track in tracks:
-                    if names[int(track.class_id)] == 'person':
-                        # r = random.random()
-                        if transmit != True and isFall(track):
-                        # if r < 0.05 and transmit != True:
-                            # fallIds.append(r)
-                            HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/'
-                            createDirectory(HLS_OUTPUT)
-                            ffmpeg_process = run_ffmpeg(720, 480, 6)
-                            transmit = True
-                            transmitFrame = 0
-                            publish()
-                            fallIdx += 1
-                            break
+                if(videoType[videoTypeNum] == 'center'):
+                    global transmit
+                    global transmitFrame
+                    print("fallIds: ", fallIds)
+                    for track in tracks:
+                        if names[int(track.class_id)] == 'person':
+                            if transmit != True and isFall(track):
+                                HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/'
+                                createDirectory(HLS_OUTPUT)
+                                ffmpeg_process = run_ffmpeg(720, 480, 6)
+                                transmit = True
+                                transmitFrame = 0
+                                publish()
+                                fallIdx += 1
+                                break
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
@@ -428,9 +424,8 @@ def detect(opt):
                 ffmpeg_process.stdin.close()
                 transmitFrame = 0
                 transmit = False
-
-            global priorFilesCount
-            for (root, directories, files) in os.walk(HLS_OUTPUT):  
+            
+            for (root, directories, files) in os.walk(HLS_OUTPUT):
                 if len(files) > 0 and priorFilesCount != len(files):
                     priorFilesCount = len(files)
                     for file in files:
