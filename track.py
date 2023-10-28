@@ -151,7 +151,7 @@ def publish():
     elif videoType[videoTypeNum] == 'out':
         message = {"count" : outcount, "address" : address}
         myMQTTClinet.publish(
-            topic = f'/{busNum}/in', 
+            topic = f'/{busNum}/out', 
             QoS=1,
             payload= json.dumps(message),
         )
