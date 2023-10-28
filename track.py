@@ -25,8 +25,6 @@ import boto3
 from botocore.client import Config
 import map
 from dotenv import load_dotenv
-import random
-from weather import check_weather
 
 load_dotenv()
 HLS_PATH = os.environ.get('HLSPATH')
@@ -281,11 +279,11 @@ def detect(opt):
                 det[:, :4] = scale_coords(
                     img.shape[2:], det[:, :4], im0.shape).round()
 
-                # Print results
-                for c in det[:, -1].unique():
-                    n = (det[:, -1] == c).sum()  # detections per class
-                    # add to string
-                    s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
+                # # Print results
+                # for c in det[:, -1].unique():
+                #     n = (det[:, -1] == c).sum()  # detections per class
+                #     # add to string
+                #     s += f"{n} {names[int(c)]}{'s' * (n > 1)}, "
 
                 xywhs = xyxy2xywh(det[:, 0:4])
                 confs = det[:, 4]
@@ -294,46 +292,7 @@ def detect(opt):
                 # pass detections to deepsort
                 outputs = deepsort.update(
                     xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
-
-                # 인원수 카운팅
-                tracks = deepsort.tracker.tracks
-                print('countIds:', countIds)
-                for track in tracks:
-                    # print(track)
-                    global incount
-                    global outcount
-                    if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
-                        if(videoType[videoTypeNum] == 'in'):  # in count
-                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
-                            and ((track.centroidarr[-3][0] <= line[0]
-                                    and track.centroidarr[-3][1] >= line[1]
-                                    and track.centroidarr[-1][0] >= line[0]
-                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                    ) or
-                                    (track.centroidarr[-2][0] <= line[0]
-                                    and track.centroidarr[-2][1] <= line[1]
-                                    and track.centroidarr[-1][0] >= line[0]
-                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                    ))
-                            ):
-                                incount += 1
-                                countIds.append(track.track_id)
-                        elif videoType[videoTypeNum] == 'out':  # out count
-                            if(track.track_id not in countIds and len(track.centroidarr) >= 3
-                            and ((track.centroidarr[-3][0] >= line[0]
-                                    and track.centroidarr[-3][1] <= line[3]
-                                    and track.centroidarr[-1][0] <= line[0]
-                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
-                                    ) or
-                                    (track.centroidarr[-2][0] >= line[0]
-                                    and track.centroidarr[-2][1] <= line[3]
-                                    and track.centroidarr[-1][0] <= line[0]
-                                    and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
-                                    ))
-                            ):
-                                outcount += 1
-                                countIds.append(track.track_id)
-
+                
                 # fall detection
                 if(videoType[videoTypeNum] == 'center'):
                     global transmit
@@ -350,6 +309,47 @@ def detect(opt):
                                 publish()
                                 fallIdx += 1
                                 break
+
+                # 인원수 카운팅
+                else:
+                    tracks = deepsort.tracker.tracks
+                    print('countIds:', countIds)
+                    for track in tracks:
+                        # print(track)
+                        global incount
+                        global outcount
+                        if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
+                            if(videoType[videoTypeNum] == 'in'):  # in count
+                                if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                                and ((track.centroidarr[-3][0] <= line[0]
+                                        and track.centroidarr[-3][1] >= line[1]
+                                        and track.centroidarr[-1][0] >= line[0]
+                                        and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                        ) or
+                                        (track.centroidarr[-2][0] <= line[0]
+                                        and track.centroidarr[-2][1] <= line[1]
+                                        and track.centroidarr[-1][0] >= line[0]
+                                        and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                        ))
+                                ):
+                                    incount += 1
+                                    countIds.append(track.track_id)
+                            elif videoType[videoTypeNum] == 'out':  # out count
+                                if(track.track_id not in countIds and len(track.centroidarr) >= 3
+                                and ((track.centroidarr[-3][0] >= line[0]
+                                        and track.centroidarr[-3][1] <= line[3]
+                                        and track.centroidarr[-1][0] <= line[0]
+                                        and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
+                                        ) or
+                                        (track.centroidarr[-2][0] >= line[0]
+                                        and track.centroidarr[-2][1] <= line[3]
+                                        and track.centroidarr[-1][0] <= line[0]
+                                        and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
+                                        ))
+                                ):
+                                    outcount += 1
+                                    countIds.append(track.track_id)
+
 
                 # draw boxes for visualization
                 if len(outputs) > 0:
