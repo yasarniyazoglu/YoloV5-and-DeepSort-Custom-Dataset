@@ -318,7 +318,6 @@ def detect(opt):
                                 ffmpeg_process = run_ffmpeg(720, 480, 6)
                                 transmit = True
                                 transmitFrame = 0
-                                publish()
                                 fallIdx += 1
                                 break
 
@@ -437,6 +436,8 @@ def detect(opt):
                 
             # hls 변환하기 위한 subprocess 생성
             if transmit and transmitFrame < fps*savePeriod:
+                if transmitFrame == fps * 13:
+                    publish()
                 ffmpeg_process.stdin.write(im0)
                 transmitFrame += 1
 
