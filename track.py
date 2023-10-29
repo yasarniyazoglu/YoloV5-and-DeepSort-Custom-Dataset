@@ -361,8 +361,17 @@ def detect(opt):
 
                         c = int(cls)  # integer class
                         label = f'{id} {names[c]} {conf:.2f}'
-                        annotator.box_label(
-                            bboxes, label, color=colors(c, True))
+                        if names[c] == 'head':
+                            if id not in countIds:
+                                annotator.box_label(bboxes, label, color=(153, 255, 153))
+                            else:
+                                annotator.box_label(bboxes, label, color=(0, 255, 0))
+
+                        if names[c] == 'person':
+                            if id not in countIds:
+                                annotator.box_label(bboxes, label, color=(204, 204, 255))
+                            else:
+                                annotator.box_label(bboxes, label, color=(0, 0, 255))
 
                         if save_txt:
                             # to MOT format
@@ -389,12 +398,12 @@ def detect(opt):
 
             if videoType[videoTypeNum] == 'in':
                 cv2.line(im0, (line[0], line[1]),
-                        (line[2], line[3]), (255, 0, 0), 5)
+                        (line[2], line[3]), (255, 51, 0), 5)
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
             elif videoType[videoTypeNum] == 'out':
                 cv2.line(im0, (line[0], line[1]),
-                        (line[2], line[3]), (255, 0, 0), 5)
+                        (line[2], line[3]), (255, 51, 0), 5)
                 cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
 
