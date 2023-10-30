@@ -171,8 +171,8 @@ def createDirectory(directory):
 def isFall(track):
     # print('test')
     if(len(track.height) >= fps//2):
-        if(track.track_id not in fallIds and ((track.height[fps//2]*0.5 > track.height[-1]) 
-                                                or (track.height[fps//2]*0.5 > track.height[-1]))):
+        if(track.track_id not in fallIds and ((track.height[-(fps//2)]*0.5 > track.height[-1]) 
+                                                or (track.height[-(fps//2)+1]*0.5 > track.height[-1]))):
             fallIds.append(track.track_id)
             return True
     return False 
