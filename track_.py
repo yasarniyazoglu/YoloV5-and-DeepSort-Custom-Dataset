@@ -200,8 +200,7 @@ def publish(source):
             payload= json.dumps(message),
         )
 
-# def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, dataset, half):
-def detect(opt):
+def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, dataset, half):
     source = opt.source
     # initialize deepsort
     cfg = get_config()
@@ -211,30 +210,6 @@ def detect(opt):
                             max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
                             max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
                             use_cuda=True)
-    # Initialize
-    device = select_device(opt.device)
-    out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
-    opt.output, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
-    opt.save_txt, opt.img_size, opt.evaluate
-    half = device.type != 'cpu'  # half precision only supported on CUDA
-    # Load model
-    model = attempt_load(yolo_weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
-    imgsz = check_img_size(imgsz, s=stride)  # check img_size
-    names = model.module.names if hasattr(
-    model, 'module') else model.names  # get class names
-    if half:
-        model.half()  # to FP16
-
-    # Set Dataloader
-    vid_path, vid_writer = None, None
-    # Check if environment supports image displays
-    if show_vid:
-        show_vid = check_imshow()
-
-    # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
-
     global HLS_OUTPUT
     global line
     global fallIdx
@@ -247,8 +222,8 @@ def detect(opt):
     elif "out" in source:
         line = [200, 190, 200, 280]
     else:
-        video_width = 852
-        video_height = 480
+        video_width = 1280
+        video_height = 720
         fps = 29
 
     createDirectory(HLS_OUTPUT)
@@ -260,25 +235,16 @@ def detect(opt):
     #         pass
     #         shutil.rmtree(out)  # delete output folder
     #     os.makedirs(out)  # make new output folder
-    webcam = source == '0' or source.startswith(
-    'rtsp') or source.startswith('http') or source.endswith('.txt')
-    save_path = str(Path(out))
-    # extract what is in between the last '/' and last '.'
-    txt_file_name = source.split('/')[-1].split('.')[0]
-    txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
-    opt.img_size = check_img_size(opt.img_size)
-    if webcam:
-        cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=opt.img_size, stride=stride)
-    else:
-        dataset = LoadImages(source, img_size=opt.img_size, stride=stride)
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
             next(model.parameters())))  # run once
     t0 = time.time()
+    priorFilesCount = -1
+    for (root, directories, files) in os.walk(HLS_OUTPUT):
+        priorFilesCount = len(files)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
-        # img = torch.from_numpy(img).to(device)
+        img = torch.from_numpy(img).to(device)
         img = img.half() if half else img.float()  # uint8 to fp16/32
         img /= 255.0  # 0 - 255 to 0.0 - 1.0
         if img.ndimension() == 3:
@@ -530,40 +496,35 @@ if __name__ == '__main__':
         IoTInit()
         S3Init()
         opt = parser.parse_args()
-        # out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
+        out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
-        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4", "clip/fall4.mp4"]
+        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4", "clip/fall6.mp4"]
         threads = []
-        priorFilesCount = -1
-        for (root, directories, files) in os.walk(HLS_OUTPUT):
-            priorFilesCount = len(files)
         for param in parameters:
             opt.source = param
-            # source = param
+            source = param
             
-        #     webcam = source == '0' or source.startswith(
-        # 'rtsp') or source.startswith('http') or source.endswith('.txt')
-        #     save_path = str(Path(out))
-        # # extract what is in between the last '/' and last '.'
-        #     txt_file_name = source.split('/')[-1].split('.')[0]
-        #     txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
-        #     opt.img_size = check_img_size(opt.img_size)
-        #     if webcam:
-        #         cudnn.benchmark = True  # set True to speed up constant image size inference
-        #         dataset = LoadStreams(source, img_size=opt.img_size, stride=stride)
-        #     else:
-        #         dataset = LoadImages(source, img_size=opt.img_size, stride=stride)
+            webcam = source == '0' or source.startswith(
+        'rtsp') or source.startswith('http') or source.endswith('.txt')
+            save_path = str(Path(out))
+        # extract what is in between the last '/' and last '.'
+            txt_file_name = source.split('/')[-1].split('.')[0]
+            txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
+            opt.img_size = check_img_size(opt.img_size)
+            if webcam:
+                cudnn.benchmark = True  # set True to speed up constant image size inference
+                dataset = LoadStreams(source, img_size=opt.img_size, stride=stride)
+            else:
+                dataset = LoadImages(source, img_size=opt.img_size, stride=stride)
 
-            # thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
-            #                                                show_vid, save_vid, save_txt, opt.img_size, evaluate,
-            #                                                device, model, stride, names, vid_path, dataset, half
-            #                                                ))
-            thread = threading.Thread(target=detect, args=(opt, ))
+            thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
+                                                           show_vid, save_vid, save_txt, opt.img_size, evaluate,
+                                                           device, model, stride, names, vid_path, dataset, half
+                                                           ))
             thread.start()
             threads.append(thread)
         
         # # 모든 스레드가 종료될 때까지 기다림
         for thread in threads:
             thread.join()
-
 

@@ -516,6 +516,7 @@ if __name__ == '__main__':
     with torch.no_grad():
         # detect(args)
         IoTInit()
+        S3Init()
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
         parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4", "clip/fall6.mp4"]
         # parameters = ["clip/in1_2_3p.mp4"]
