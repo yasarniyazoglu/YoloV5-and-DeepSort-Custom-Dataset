@@ -122,7 +122,7 @@ def trackInit(opt):
         show_vid = check_imshow()
 
     # Get names and colors
-        names = model.module.names if hasattr(model, 'module') else model.names
+    names = model.module.names if hasattr(model, 'module') else model.names
 
         # Run inference
     return out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half
