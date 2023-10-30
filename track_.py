@@ -36,9 +36,9 @@ HLS_PATH = os.environ.get('HLSPATH')
 HLS_OUTPUT = HLS_PATH
 
 # 영상 정보
-video_width = 720
-video_height = 480
-fps = 6
+video_width = 640
+video_height = 360
+fps = 30
 
 # S3 영상 저장
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
@@ -67,7 +67,8 @@ videoTypeNum = 0
 busNum = os.environ.get('BUSNUM')
 incount = 0
 outcount = 0
-priorcount = -1
+priorInCount = -1
+priorOutCount = -1
 inCountIds = []
 outCountIds = []
 line = []  # x1, y1, x2, y2
@@ -222,9 +223,9 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
     elif "out" in source:
         line = [200, 190, 200, 280]
     else:
-        video_width = 1280
-        video_height = 720
-        fps = 29
+        video_width = 640
+        video_height = 360
+        fps = 20
 
     createDirectory(HLS_OUTPUT)
 
@@ -409,14 +410,15 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
 
 
             # 혼잡도 출력 및 전송#########################################################
-            global priorcount
-            if 'in' in source and priorcount != incount:
+            global priorInCount
+            global priorOutCount
+            if 'in' in source and priorInCount != incount:
                 publish(source)
-                priorcount = incount
+                priorInCount = incount
             
-            if 'out' in source and priorcount != outcount:
+            if 'out' in source and priorOutCount != outcount:
                 publish(source)
-                priorcount = outcount
+                priorOutCount = outcount
 
             if show_vid:
                 cv2.imshow(p, im0)
