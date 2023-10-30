@@ -130,7 +130,7 @@ def trackInit(opt):
             next(model.parameters())))  # run once
     return out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half
 
-def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
+def handle_upload_img(file): # f = 파일명 이름.확장자 분리
     print("upload_img!!")
     if "ts" in file:
         typ = "video/MP2T"
@@ -290,8 +290,9 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                 outputs = deepsort.update(
                     xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
                 
+                tracks = deepsort.tracker.tracks
                 # fall detection
-                if('fall' in source):
+                if 'fall' in source:
                     global transmit
                     global transmitFrame
                     print("fallIds: ", fallIds)
@@ -308,7 +309,6 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
 
                 # 인원수 카운팅
                 else:
-                    tracks = deepsort.tracker.tracks
                     print('inCountIds:', inCountIds)
                     print('outCountIds:', outCountIds)
                     for track in tracks:
@@ -316,7 +316,7 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                         global incount
                         global outcount
                         if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
-                            if('in' in source):  # in count
+                            if 'in' in source:  # in count
                                 if(track.track_id not in inCountIds and len(track.centroidarr) >= 3
                                 and ((track.centroidarr[-3][0] <= line[0]
                                         and track.centroidarr[-3][1] >= line[1]
@@ -420,7 +420,7 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
             
-            if 'fall' in source == 'fall': 
+            if 'fall' in source: 
                 if transmit and transmitFrame < fps*savePeriod:
                     if transmitFrame == fps * 13:
                         publish(source)
@@ -437,7 +437,7 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                     if len(files) > 0 and priorFilesCount != len(files):
                         priorFilesCount = len(files)
                         for file in files:
-                            handle_upload_img(file, videoType[videoTypeNum])
+                            handle_upload_img(file)
                     else:
                         break
 
@@ -495,7 +495,7 @@ if __name__ == '__main__':
         opt = parser.parse_args()
         out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
-        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4"]
+        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4", "clip/fall4.mp4"]
         threads = []
         for param in parameters:
             opt.source = param
@@ -513,6 +513,11 @@ if __name__ == '__main__':
                 dataset = LoadStreams(source, img_size=imgsz, stride=stride)
             else:
                 dataset = LoadImages(source, img_size=imgsz, stride=stride)
+
+            if 'fall' in source:
+                opt.classes = [1]
+            else:
+                opt.classes = [0]
 
             thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
                                                            show_vid, save_vid, save_txt, imgsz, evaluate,
