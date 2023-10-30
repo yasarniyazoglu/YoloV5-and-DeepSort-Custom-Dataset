@@ -98,6 +98,37 @@ def S3Init():
             aws_secret_access_key=ACCESS_SECRET_KEY,
             config=Config(signature_version='s3v4')
         )
+    
+def trackInit(opt):
+    # Initialize
+    device = select_device(opt.device)
+    out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
+    opt.output, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
+    opt.save_txt, opt.img_size, opt.evaluate
+    half = device.type != 'cpu'  # half precision only supported on CUDA
+    # Load model
+    model = attempt_load(yolo_weights, map_location=device)  # load FP32 model
+    stride = int(model.stride.max())  # model stride
+    imgsz = check_img_size(imgsz, s=stride)  # check img_size
+    names = model.module.names if hasattr(
+    model, 'module') else model.names  # get class names
+    if half:
+        model.half()  # to FP16
+
+    # Set Dataloader
+    vid_path, vid_writer = None, None
+    # Check if environment supports image displays
+    if show_vid:
+        show_vid = check_imshow()
+
+    # Get names and colors
+        names = model.module.names if hasattr(model, 'module') else model.names
+
+        # Run inference
+    if device.type != 'cpu':
+        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
+            next(model.parameters())))  # run once
+    return out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half
 
 def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
     print("upload_img!!")
@@ -172,19 +203,16 @@ def publish(source):
             payload= json.dumps(message),
         )
 
-def detect(opt):
-    global videoTypeNum
-    # if videoType[videoTypeNum] == 'fall':
-    #     S3Init()
-    # else:
-    #     IoTInit()
-    
-    out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
-        opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
-        opt.save_txt, opt.img_size, opt.evaluate
-    webcam = source == '0' or source.startswith(
-        'rtsp') or source.startswith('http') or source.endswith('.txt')
-
+def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, dataset, half):
+    source = opt.source
+    # initialize deepsort
+    cfg = get_config()
+    cfg.merge_from_file(opt.config_deepsort)
+    deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
+                            max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
+                            max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
+                            max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
+                            use_cuda=True)
     global HLS_OUTPUT
     global line
     global fallIdx
@@ -203,64 +231,15 @@ def detect(opt):
 
     createDirectory(HLS_OUTPUT)
 
-    # initialize deepsort
-    cfg = get_config()
-    cfg.merge_from_file(opt.config_deepsort)
-    # attempt_download(deep_sort_weights,
-    #                  repo='mikel-brostrom/Yolov5_DeepSort_Pytorch')
-    deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
-                        max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
-                        max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
-                        max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET,
-                        use_cuda=True)
+    # # The MOT16 evaluation runs multiple inference streams in parallel, each one writing to
+    # # its own .txt file. Hence, in that case, the output folder is not sourrestored
+    # if not evaluate:
+    #     if os.path.exists(out):
+    #         pass
+    #         shutil.rmtree(out)  # delete output folder
+    #     os.makedirs(out)  # make new output folder
 
-    # Initialize
-    device = select_device(opt.device)
-
-    # The MOT16 evaluation runs multiple inference streams in parallel, each one writing to
-    # its own .txt file. Hence, in that case, the output folder is not restored
-    if not evaluate:
-        if os.path.exists(out):
-            pass
-            shutil.rmtree(out)  # delete output folder
-        os.makedirs(out)  # make new output folder
-
-    half = device.type != 'cpu'  # half precision only supported on CUDA
-    # Load model
-    model = attempt_load(yolo_weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
-    imgsz = check_img_size(imgsz, s=stride)  # check img_size
-    names = model.module.names if hasattr(
-        model, 'module') else model.names  # get class names
-    if half:
-        model.half()  # to FP16
-
-    # Set Dataloader
-    vid_path, vid_writer = None, None
-    # Check if environment supports image displays
-    if show_vid:
-        show_vid = check_imshow()
-
-    if webcam:
-        cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz, stride=stride)
-    else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride)
-
-    # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
-
-    # Run inference
-    if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
-            next(model.parameters())))  # run once
     t0 = time.time()
-
-    save_path = str(Path(out))
-    # extract what is in between the last '/' and last '.'
-    txt_file_name = source.split('/')[-1].split('.')[0]
-    txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
-
     priorFilesCount = -1
     for (root, directories, files) in os.walk(HLS_OUTPUT):
         priorFilesCount = len(files)
@@ -512,23 +491,38 @@ if __name__ == '__main__':
     with torch.no_grad():
         # detect(args)
         IoTInit()
+        S3Init()
+        opt = parser.parse_args()
+        out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
         parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4"]
-        # parameters = ["clip/in1_2_3p.mp4"]
         threads = []
         for param in parameters:
-            args = parser.parse_args()
-            args.source = param
-            args.img_size = check_img_size(args.img_size)
-            thread = threading.Thread(target=detect, args=(args,))
+            opt.source = param
+            source = param
+            
+            webcam = source == '0' or source.startswith(
+        'rtsp') or source.startswith('http') or source.endswith('.txt')
+            save_path = str(Path(out))
+        # extract what is in between the last '/' and last '.'
+            txt_file_name = source.split('/')[-1].split('.')[0]
+            txt_path = str(Path(out)) + '/' + txt_file_name + '.txt'
+            opt.img_size = check_img_size(opt.img_size)
+            if webcam:
+                cudnn.benchmark = True  # set True to speed up constant image size inference
+                dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+            else:
+                dataset = LoadImages(source, img_size=imgsz, stride=stride)
+
+            thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
+                                                           show_vid, save_vid, save_txt, imgsz, evaluate,
+                                                           device, model, stride, names, vid_path, dataset, half
+                                                           ))
             thread.start()
             threads.append(thread)
         
         # # 모든 스레드가 종료될 때까지 기다림
         for thread in threads:
             thread.join()
-
-
-
 
 
