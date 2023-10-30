@@ -125,9 +125,6 @@ def trackInit(opt):
         names = model.module.names if hasattr(model, 'module') else model.names
 
         # Run inference
-    if device.type != 'cpu':
-        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
-            next(model.parameters())))  # run once
     return out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half
 
 def handle_upload_img(file): # f = 파일명 이름.확장자 분리
@@ -238,7 +235,9 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
     #         pass
     #         shutil.rmtree(out)  # delete output folder
     #     os.makedirs(out)  # make new output folder
-
+    if device.type != 'cpu':
+        model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
+            next(model.parameters())))  # run once
     t0 = time.time()
     priorFilesCount = -1
     for (root, directories, files) in os.walk(HLS_OUTPUT):
