@@ -168,8 +168,12 @@ def publish():
         )
 
 def detect(opt):
-    IoTInit()
-    S3Init()
+    global videoTypeNum
+    if videoType[videoTypeNum] == 'fall':
+        S3Init()
+    else:
+        IoTInit()
+    
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
         opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
         opt.save_txt, opt.img_size, opt.evaluate
@@ -177,7 +181,6 @@ def detect(opt):
         'rtsp') or source.startswith('http') or source.endswith('.txt')
 
     global HLS_OUTPUT
-    global videoTypeNum
     global line
     global fallIdx
     global video_width
@@ -200,8 +203,8 @@ def detect(opt):
     # initialize deepsort
     cfg = get_config()
     cfg.merge_from_file(opt.config_deepsort)
-    attempt_download(deep_sort_weights,
-                     repo='mikel-brostrom/Yolov5_DeepSort_Pytorch')
+    # attempt_download(deep_sort_weights,
+    #                  repo='mikel-brostrom/Yolov5_DeepSort_Pytorch')
     deepsort = DeepSort(cfg.DEEPSORT.REID_CKPT,
                         max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE,
                         max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE,
@@ -433,27 +436,27 @@ def detect(opt):
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
-                
-            # hls 변환하기 위한 subprocess 생성
-            if transmit and transmitFrame < fps*savePeriod:
-                if transmitFrame == fps * 13:
-                    publish()
-                ffmpeg_process.stdin.write(im0)
-                transmitFrame += 1
-
-            if transmitFrame >= fps*savePeriod:
-                print("finish video")
-                ffmpeg_process.stdin.close()
-                transmitFrame = 0
-                transmit = False
             
-            for (root, directories, files) in os.walk(HLS_OUTPUT):
-                if len(files) > 0 and priorFilesCount != len(files):
-                    priorFilesCount = len(files)
-                    for file in files:
-                        handle_upload_img(file, videoType[videoTypeNum])
-                else:
-                    break
+            if videoType[videoTypeNum] == 'fall': 
+                if transmit and transmitFrame < fps*savePeriod:
+                    if transmitFrame == fps * 13:
+                        publish()
+                    ffmpeg_process.stdin.write(im0)
+                    transmitFrame += 1
+
+                if transmitFrame >= fps*savePeriod:
+                    print("finish video")
+                    ffmpeg_process.stdin.close()
+                    transmitFrame = 0
+                    transmit = False
+                
+                for (root, directories, files) in os.walk(HLS_OUTPUT):
+                    if len(files) > 0 and priorFilesCount != len(files):
+                        priorFilesCount = len(files)
+                        for file in files:
+                            handle_upload_img(file, videoType[videoTypeNum])
+                    else:
+                        break
 
 
     if save_txt or save_vid:
