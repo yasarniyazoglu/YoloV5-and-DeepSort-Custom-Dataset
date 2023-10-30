@@ -514,12 +514,12 @@ if __name__ == '__main__':
             opt.img_size = check_img_size(opt.img_size)
             if webcam:
                 cudnn.benchmark = True  # set True to speed up constant image size inference
-                dataset = LoadStreams(source, img_size=imgsz, stride=stride)
+                dataset = LoadStreams(source, img_size=opt.img_size, stride=stride)
             else:
-                dataset = LoadImages(source, img_size=imgsz, stride=stride)
+                dataset = LoadImages(source, img_size=opt.img_size, stride=stride)
 
             thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
-                                                           show_vid, save_vid, save_txt, imgsz, evaluate,
+                                                           show_vid, save_vid, save_txt, opt.img_size, evaluate,
                                                            device, model, stride, names, vid_path, dataset, half
                                                            ))
             thread.start()
