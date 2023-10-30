@@ -28,6 +28,8 @@ import boto3
 from botocore.client import Config
 import map
 from dotenv import load_dotenv
+import threading
+lock = threading.Lock()
 
 load_dotenv()
 HLS_PATH = os.environ.get('HLSPATH')
@@ -75,8 +77,6 @@ fallIdx = 1
 fallIds = []
 transmit = False
 transmitFrame = 0
-
-lock = threading.Lock()
 
 def IoTInit():
     global myMQTTClinet
@@ -146,18 +146,18 @@ def isFall(track):
             return True
     return False 
 
-def publish():
-    print(videoType[videoTypeNum], "PUBLISH!!!!!!!!!!")
+def publish(source):
+    print(source, "PUBLISH!!!!!!!!!!")
 
     address = map.address()            
-    if videoType[videoTypeNum] == 'in':
+    if 'in' in source:
         message = {"count" : incount}
         myMQTTClinet.publish(
             topic = f'/{busNum}/in',
             QoS=1,
             payload= json.dumps(message),
         )
-    elif videoType[videoTypeNum] == 'out':
+    elif 'out' in source:
         message = {"count" : outcount}
         myMQTTClinet.publish(
             topic = f'/{busNum}/out', 
@@ -195,13 +195,11 @@ def detect(opt):
         line = [200, 190, 200, 380]
         HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' # for test 
     elif "out" in source:
-        videoTypeNum = 1
         line = [200, 190, 200, 280]
     else:
         video_width = 1280
         video_height = 720
         fps = 29
-        videoTypeNum = 2
 
     createDirectory(HLS_OUTPUT)
 
@@ -314,7 +312,7 @@ def detect(opt):
                     xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
                 
                 # fall detection
-                if(videoType[videoTypeNum] == 'fall'):
+                if('fall' in source):
                     global transmit
                     global transmitFrame
                     print("fallIds: ", fallIds)
@@ -339,7 +337,7 @@ def detect(opt):
                         global incount
                         global outcount
                         if(names[int(track.class_id)] == 'head'): # head를 기준으로 카운트
-                            if(videoType[videoTypeNum] == 'in'):  # in count
+                            if('in' in source):  # in count
                                 if(track.track_id not in inCountIds and len(track.centroidarr) >= 3
                                 and ((track.centroidarr[-3][0] <= line[0]
                                         and track.centroidarr[-3][1] >= line[1]
@@ -354,7 +352,7 @@ def detect(opt):
                                 ):
                                     incount += 1
                                     inCountIds.append(track.track_id)
-                            elif videoType[videoTypeNum] == 'out':  # out count
+                            elif 'out' in source:  # out count
                                 if(track.track_id not in outCountIds and len(track.centroidarr) >= 3
                                 and ((track.centroidarr[-3][0] >= line[0]
                                         and track.centroidarr[-3][1] <= line[3]
@@ -416,12 +414,12 @@ def detect(opt):
             # 기준 line, text 출력
             text_scale = max(1, im0.shape[1] // 1600)
 
-            if videoType[videoTypeNum] == 'in':
+            if 'in' in source:
                 cv2.line(im0, (line[0], line[1]),
                         (line[2], line[3]), (255, 51, 0), 5)
                 cv2.putText(im0, 'in: %d' % incount, (20, 20 + text_scale),
                             cv2.FONT_HERSHEY_PLAIN, text_scale, (0, 255, 255), thickness=2)
-            elif videoType[videoTypeNum] == 'out':
+            elif 'out' in source:
                 cv2.line(im0, (line[0], line[1]),
                         (line[2], line[3]), (255, 51, 0), 5)
                 cv2.putText(im0, 'out: %d' % outcount, (20, 20 + text_scale),
@@ -430,16 +428,12 @@ def detect(opt):
 
             # 혼잡도 출력 및 전송#########################################################
             global priorcount
-            if videoType[videoTypeNum] == 'in' and priorcount != incount:
-                lock.acquire()
-                publish()
-                lock.release()
+            if 'in' in source and priorcount != incount:
+                publish(source)
                 priorcount = incount
             
-            if videoType[videoTypeNum] == 'out' and priorcount != outcount:
-                lock.acquire()
-                publish()
-                lock.release()
+            if 'out' in source and priorcount != outcount:
+                publish(source)
                 priorcount = outcount
 
             if show_vid:
@@ -447,10 +441,10 @@ def detect(opt):
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
             
-            if videoType[videoTypeNum] == 'fall': 
+            if 'fall' in source == 'fall': 
                 if transmit and transmitFrame < fps*savePeriod:
                     if transmitFrame == fps * 13:
-                        publish()
+                        publish(source)
                     ffmpeg_process.stdin.write(im0)
                     transmitFrame += 1
 
@@ -518,17 +512,21 @@ if __name__ == '__main__':
     with torch.no_grad():
         # detect(args)
         IoTInit()
-        parameters = ["clip/in1_3_3p.mp4", "clip/out3_1_2p.mp4"]
+        # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
+        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4"]
+        # parameters = ["clip/in1_2_3p.mp4"]
+        threads = []
         for param in parameters:
             args = parser.parse_args()
             args.source = param
             args.img_size = check_img_size(args.img_size)
             thread = threading.Thread(target=detect, args=(args,))
             thread.start()
-
+            threads.append(thread)
+        
         # # 모든 스레드가 종료될 때까지 기다림
-        # for thread in threads:
-        #     thread.join()
+        for thread in threads:
+            thread.join()
 
 
 
