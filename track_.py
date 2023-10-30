@@ -255,6 +255,10 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
         t1 = time_sync()
         pred = model(img, augment=opt.augment)[0]
         # Apply NMS
+        if 'fall' in source:
+            opt.classes = [0]
+        else:
+            opt.classes = [1]
         pred = non_max_suppression(
             pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
         t2 = time_sync()
@@ -513,11 +517,6 @@ if __name__ == '__main__':
                 dataset = LoadStreams(source, img_size=imgsz, stride=stride)
             else:
                 dataset = LoadImages(source, img_size=imgsz, stride=stride)
-
-            if 'fall' in source:
-                opt.classes = [1]
-            else:
-                opt.classes = [0]
 
             thread = threading.Thread(target=detect, args=(opt, out, yolo_weights, deep_sort_weights, 
                                                            show_vid, save_vid, save_txt, imgsz, evaluate,
