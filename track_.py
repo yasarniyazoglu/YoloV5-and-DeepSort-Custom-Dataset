@@ -36,16 +36,16 @@ HLS_PATH = os.environ.get('HLSPATH')
 HLS_OUTPUT = HLS_PATH
 
 # 영상 정보
-video_width = 640
-video_height = 360
-fps = 30
+video_width = 720
+video_height = 480
+fps = 6
 
 # S3 영상 저장
 ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
 s3 = ""
-savePeriod = 30
+savePeriod = 9
 
 # IoT
 CLIENT_ID = "MyTest"
@@ -78,6 +78,7 @@ fallIdx = 1
 fallIds = []
 transmit = False
 transmitFrame = 0
+priorFilesCount = -1
 
 def IoTInit():
     global myMQTTClinet
@@ -152,7 +153,7 @@ def run_ffmpeg(width, height, fps):
         '-i', '-',
         '-c:v', 'libx264',  # x264 비디오 코덱 지정
         '-g', f'{fps*10}',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)  
-        '-hls_time', '10',
+        '-hls_time', '3',
         '-hls_list_size', '10',
         '-force_key_frames', f'expr:gte(t,n_forced*{fps*10})',  # 키프레임 간격을 맞추기 위한 설정
         f'{HLS_OUTPUT}index.m3u8'
@@ -168,8 +169,8 @@ def createDirectory(directory):
 
 def isFall(track):
     # print('test')
-    if(len(track.height) >= fps//2):
-        if(track.track_id not in fallIds and ((track.height[-(fps//2)]*0.5 > track.height[-1]) 
+    if len(track.height) >= fps//2+1:
+        if(track.track_id not in fallIds and ((track.height[-(fps//2+1)]*0.5 > track.height[-1]) 
                                                 or (track.height[-(fps//2)+1]*0.5 > track.height[-1]))):
             fallIds.append(track.track_id)
             return True
@@ -214,18 +215,17 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
     global HLS_OUTPUT
     global line
     global fallIdx
-    global video_width
-    global video_height
-    global fps
+    global priorFilesCount
     if "in" in source:  # in 이라는 글자가 포함되면 true
-        line = [200, 190, 200, 380]
-        HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' # for test 
+        line = [220, 150, 220, 340] # x1, y1, x2, y2
     elif "out" in source:
-        line = [200, 190, 200, 280]
+        line = [220, 150, 220, 340] # x1, y1, x2, y2
     else:
-        video_width = 640
-        video_height = 360
-        fps = 20
+        HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' 
+        if 'fall' in source:
+            if priorFilesCount == -1:
+                for (root, directories, files) in os.walk(HLS_OUTPUT):
+                    priorFilesCount = len(files)
 
     createDirectory(HLS_OUTPUT)
 
@@ -240,9 +240,6 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(
             next(model.parameters())))  # run once
     t0 = time.time()
-    priorFilesCount = -1
-    for (root, directories, files) in os.walk(HLS_OUTPUT):
-        priorFilesCount = len(files)
 
     for frame_idx, (path, img, im0s, vid_cap) in enumerate(dataset):
         img = torch.from_numpy(img).to(device)
@@ -323,12 +320,12 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                             if 'in' in source:  # in count
                                 if(track.track_id not in inCountIds and len(track.centroidarr) >= 3
                                 and ((track.centroidarr[-3][0] <= line[0]
-                                        and track.centroidarr[-3][1] >= line[1]
+                                        # and track.centroidarr[-3][1] >= line[1]
                                         and track.centroidarr[-1][0] >= line[0]
                                         and abs(track.centroidarr[-1][0] - track.centroidarr[-3][0]) < 360
                                         ) or
                                         (track.centroidarr[-2][0] <= line[0]
-                                        and track.centroidarr[-2][1] <= line[1]
+                                        # and track.centroidarr[-2][1] <= line[1]
                                         and track.centroidarr[-1][0] >= line[0]
                                         and abs(track.centroidarr[-1][0] - track.centroidarr[-2][0]) < 240
                                         ))
@@ -427,7 +424,7 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
             
             if 'fall' in source: 
                 if transmit and transmitFrame < fps*savePeriod:
-                    if transmitFrame == fps * 13:
+                    if transmitFrame == fps * 4:
                         publish(source)
                     ffmpeg_process.stdin.write(im0)
                     transmitFrame += 1
@@ -500,7 +497,7 @@ if __name__ == '__main__':
         opt = parser.parse_args()
         out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
-        parameters = ["clip/out3_1_2p.mp4", "clip/in1_2_3p.mp4", "clip/fall6.mp4"]
+        parameters = ["clip/in6.mp4", "clip/out6.mp4", "clip/fall8.mp4"]
         threads = []
         for param in parameters:
             opt.source = param
@@ -526,7 +523,7 @@ if __name__ == '__main__':
             thread.start()
             threads.append(thread)
         
-        # # 모든 스레드가 종료될 때까지 기다림
-        for thread in threads:
-            thread.join()
+        # 모든 스레드가 종료될 때까지 기다림
+        # for thread in threads:
+        #     thread.join()
 
