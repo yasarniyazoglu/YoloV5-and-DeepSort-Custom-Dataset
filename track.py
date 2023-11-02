@@ -55,7 +55,7 @@ myMQTTClinet = ""
 
 
 # input video
-videoType = ['in', 'out', 'center']
+videoType = ['in', 'out', 'fall']
 videoTypeNum = 0
 
 # 인원수 카운팅
@@ -65,6 +65,7 @@ outcount = 0
 priorcount = -1
 countIds = []
 line = []  # x1, y1, x2, y2
+lastUpdateTime = -1
 
 # fall detection
 fallIdx = 1
@@ -94,7 +95,7 @@ def S3Init():
             config=Config(signature_version='s3v4')
         )
 
-def handle_upload_img(file, videoType): # f = 파일명 이름.확장자 분리
+def handle_upload_img(file): # f = 파일명 이름.확장자 분리
     print("upload_img!!")
     if "ts" in file:
         typ = "video/MP2T"
@@ -134,9 +135,9 @@ def createDirectory(directory):
 
 def isFall(track):
     # print('test')
-    if(len(track.height) >= fps//2):
-        if(track.track_id not in fallIds and ((track.height[fps//2]*0.5 > track.height[-1]) 
-                                                or (track.height[fps//2]*0.5 > track.height[-1]))):
+    if(len(track.height) >= fps):
+        if(track.track_id not in fallIds and ((track.height[-fps]*0.5 >= track.height[-1]) 
+                                                or (track.height[-fps+1]*0.5 >= track.height[-1]))):
             fallIds.append(track.track_id)
             return True
     return False 
@@ -167,13 +168,7 @@ def publish():
             payload= json.dumps(message),
         )
 
-def detect(opt):
-    global videoTypeNum
-    if videoType[videoTypeNum] == 'fall':
-        S3Init()
-    else:
-        IoTInit()
-    
+def detect(opt):    
     out, source, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate = \
         opt.output, opt.source, opt.yolo_weights, opt.deep_sort_weights, opt.show_vid, opt.save_vid, \
         opt.save_txt, opt.img_size, opt.evaluate
@@ -183,20 +178,20 @@ def detect(opt):
     global HLS_OUTPUT
     global line
     global fallIdx
-    global video_width
-    global video_height
-    global fps
+    global videoTypeNum
     if "in" in source:  # in 이라는 글자가 포함되면 true
-        line = [200, 190, 200, 380]
-        HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' # for test 
+        line = [220, 150, 220, 340] # x1, y1, x2, y2
+        videoTypeNum = 0
     elif "out" in source:
+        line = [220, 150, 220, 340] # x1, y1, x2, y2
         videoTypeNum = 1
-        line = [200, 190, 200, 280]
     else:
-        video_width = 1280
-        video_height = 720
-        fps = 29
+        HLS_OUTPUT = f'hls/{busNum}/{fallIdx}/' # for test 
         videoTypeNum = 2
+
+    if videoType[videoTypeNum] == 'fall':
+        S3Init()
+    IoTInit()
 
     createDirectory(HLS_OUTPUT)
 
@@ -278,7 +273,12 @@ def detect(opt):
         t2 = time_sync()
         
         # Process detections
+        global countIds
         for i, det in enumerate(pred):  # detections per image
+            # print(len(det))
+            if videoType[videoTypeNum] == 'in' and len(det) == 1:
+                countIds = []
+            
             if webcam:  # batch_size >= 1
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
             else:
@@ -308,6 +308,8 @@ def detect(opt):
                 outputs = deepsort.update(
                     xywhs.cpu(), confs.cpu(), clss.cpu(), im0)
                 
+                tracks = deepsort.tracker.tracks
+
                 # fall detection
                 if(videoType[videoTypeNum] == 'fall'):
                     global transmit
@@ -326,7 +328,6 @@ def detect(opt):
 
                 # 인원수 카운팅
                 else:
-                    tracks = deepsort.tracker.tracks
                     print('countIds:', countIds)
                     for track in tracks:
                         # print(track)
@@ -424,13 +425,19 @@ def detect(opt):
 
             # 혼잡도 출력 및 전송#########################################################
             global priorcount
+            global lastUpdateTime
             if videoType[videoTypeNum] == 'in' and priorcount != incount:
                 publish()
                 priorcount = incount
             
             if videoType[videoTypeNum] == 'out' and priorcount != outcount:
                 publish()
+                lastUpdateTime = time_sync()
                 priorcount = outcount
+
+            currentTime = time_sync()
+            if videoType[videoTypeNum] == 'out' and currentTime - lastUpdateTime >= 10:
+                countIds = []
 
             if show_vid:
                 cv2.imshow(p, im0)
@@ -454,7 +461,7 @@ def detect(opt):
                     if len(files) > 0 and priorFilesCount != len(files):
                         priorFilesCount = len(files)
                         for file in files:
-                            handle_upload_img(file, videoType[videoTypeNum])
+                            handle_upload_img(file)
                     else:
                         break
 

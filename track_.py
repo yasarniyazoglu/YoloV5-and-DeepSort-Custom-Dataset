@@ -45,7 +45,7 @@ ACCESS_KEY_ID = os.environ.get('ACCESS_KEY_ID')
 ACCESS_SECRET_KEY = os.environ.get('ACCESS_SECRET_KEY')
 BUCKET_NAME = 'traffic-inf'
 s3 = ""
-savePeriod = 9
+savePeriod = 30
 
 # IoT
 CLIENT_ID = "MyTest"
@@ -72,6 +72,7 @@ priorOutCount = -1
 inCountIds = []
 outCountIds = []
 line = []  # x1, y1, x2, y2
+lastUpdateTime = -1
 
 # fall detection
 fallIdx = 1
@@ -152,10 +153,10 @@ def run_ffmpeg(width, height, fps):
         '-r', str(fps),
         '-i', '-',
         '-c:v', 'libx264',  # x264 비디오 코덱 지정
-        '-g', f'{fps*10}',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)  
-        '-hls_time', '3',
+        '-g', f'{fps*5}',  # 키프레임 간격 설정 (여기서는 10으로 예시로 설정)  
+        '-hls_time', '5',
         '-hls_list_size', '10',
-        '-force_key_frames', f'expr:gte(t,n_forced*{fps*10})',  # 키프레임 간격을 맞추기 위한 설정
+        '-force_key_frames', f'expr:gte(t,n_forced*{fps*5})',  # 키프레임 간격을 맞추기 위한 설정
         f'{HLS_OUTPUT}index.m3u8'
     ]
     return subprocess.Popen(ffmpg_cmd, stdin=subprocess.PIPE)
@@ -169,9 +170,9 @@ def createDirectory(directory):
 
 def isFall(track):
     # print('test')
-    if len(track.height) >= fps//2+1:
-        if(track.track_id not in fallIds and ((track.height[-(fps//2+1)]*0.5 > track.height[-1]) 
-                                                or (track.height[-(fps//2)+1]*0.5 > track.height[-1]))):
+    if len(track.height) >= fps:
+        if(track.track_id not in fallIds and ((track.height[-fps]*0.5 > track.height[-1]) 
+                                                or (track.height[-fps+1]*0.5 > track.height[-1]))):
             fallIds.append(track.track_id)
             return True
     return False 
@@ -261,7 +262,11 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
         t2 = time_sync()
         
         # Process detections
+        global inCountIds
+        global outCountIds
         for i, det in enumerate(pred):  # detections per image
+            if 'in' in source and len(det) == 1:
+                inCountIds = []
             if webcam:  # batch_size >= 1
                 p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
             else:
@@ -409,22 +414,30 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
             # 혼잡도 출력 및 전송#########################################################
             global priorInCount
             global priorOutCount
+            global lastUpdateTime
             if 'in' in source and priorInCount != incount:
                 publish(source)
                 priorInCount = incount
             
             if 'out' in source and priorOutCount != outcount:
                 publish(source)
+                lastUpdateTime = time_sync()
                 priorOutCount = outcount
+
+            currentTime = time_sync()
+            if 'out' in source and currentTime - lastUpdateTime >= 10:
+                outCountIds = []
 
             if show_vid:
                 cv2.imshow(p, im0)
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
             
-            if 'fall' in source: 
-                if transmit and transmitFrame < fps*savePeriod:
-                    if transmitFrame == fps * 4:
+            if 'fall' in source:
+                lock.acquire()
+                print(transmitFrame) 
+                if transmit and transmitFrame <= fps*savePeriod:
+                    if transmitFrame == fps * (savePeriod/3+5):
                         publish(source)
                     ffmpeg_process.stdin.write(im0)
                     transmitFrame += 1
@@ -442,6 +455,7 @@ def detect(opt, out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_t
                             handle_upload_img(file)
                     else:
                         break
+                lock.release()
 
 
     if save_txt or save_vid:
@@ -497,7 +511,7 @@ if __name__ == '__main__':
         opt = parser.parse_args()
         out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
         # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
-        parameters = ["clip/in6.mp4", "clip/out6.mp4", "clip/fall8.mp4"]
+        parameters = ["clip/in7.mp4", "clip/out7.mp4", "clip/fall9.mp4"]
         threads = []
         for param in parameters:
             opt.source = param
