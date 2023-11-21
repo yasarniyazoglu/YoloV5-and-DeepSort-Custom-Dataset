@@ -16,7 +16,6 @@ import torch.backends.cudnn as cudnn
 import torch
 import cv2
 from pathlib import Path
-import shutil
 import platform
 import os
 import argparse
@@ -510,8 +509,7 @@ if __name__ == '__main__':
         S3Init()
         opt = parser.parse_args()
         out, yolo_weights, deep_sort_weights, show_vid, save_vid, save_txt, imgsz, evaluate, device, model, stride, names, vid_path, half = trackInit(opt)
-        # parameters = ["clip/in1_2_3p.mp4", "clip/out3_1_2p.mp4"]
-        parameters = ["clip/in7.mp4", "clip/out7.mp4", "clip/fall9.mp4"]
+        parameters = ["clip/in.mp4", "clip/out.mp4", "clip/fall.mp4"]
         threads = []
         for param in parameters:
             opt.source = param

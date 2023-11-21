@@ -20,3 +20,13 @@ pandas
 # deep_sort -----------------------------------
 
 easydict
+
+# .env
+python-dotenv
+
+# aws
+AWSIoTPythonSDK
+boto3
+
+# map
+geopy
